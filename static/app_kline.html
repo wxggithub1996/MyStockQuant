@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>K线图表</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        /* 绝对满屏，去掉所有滚动条和边距 */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #ffffff; overflow: hidden; }
+        #chart-container { width: 100%; height: 100%; }
+        .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #999; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">正在加载 K 线数据...</div>
+    <div id="chart-container"></div>
+
+    <script>
+        // 1. 从 App 传来的 URL 中获取股票代码
+        const urlParams = new URLSearchParams(window.location.search);
+        const stockCode = urlParams.get('code');
+
+        if (!stockCode) {
+            document.getElementById('loading').innerText = "未获取到股票代码";
+        } else {
+            initChart(stockCode);
+        }
+
+        async function initChart(code) {
+            const chartDom = document.getElementById('chart-container');
+            const myChart = echarts.init(chartDom);
+            
+            try {
+                // 2. 向你的 Python 后端请求这只股票的 K 线数据
+                // (注意：这里假设你之前 Web 端的接口是 /api/kline/{code})
+                const response = await fetch(`/api/kline/${code}`);
+                const data = await response.json();
+
+                // 3. 数据清洗 (请根据你后端的实际 JSON 格式微调这里的 mapping)
+                // 假设后端返回: [{date: '2026-04-10', open: 10, close: 11, low: 9, high: 12}, ...]
+                const categoryData = data.map(item => item.date);
+                const values = data.map(item => [item.open, item.close, item.low, item.high]);
+
+                // 4. ECharts 经典 K 线配置
+                const option = {
+                    animation: false,
+                    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                    grid: { left: '10%', right: '5%', bottom: '15%', top: '5%' },
+                    xAxis: { type: 'category', data: categoryData, boundaryGap: false },
+                    yAxis: { scale: true, splitArea: { show: true } },
+                    dataZoom: [
+                        { type: 'inside', start: 50, end: 100 }, // 默认看最近一半的数据
+                        { show: true, type: 'slider', top: '90%', start: 50, end: 100 }
+                    ],
+                    series: [
+                        {
+                            name: '日K',
+                            type: 'candlestick',
+                            data: values,
+                            itemStyle: {
+                                color: '#e83828',       // 上涨为红
+                                color0: '#00a854',      // 下跌为绿
+                                borderColor: '#e83828',
+                                borderColor0: '#00a854'
+                            }
+                        }
+                    ]
+                };
+
+                document.getElementById('loading').style.display = 'none';
+                myChart.setOption(option);
+
+                // 随着手机屏幕旋转自动调整大小
+                window.addEventListener('resize', () => myChart.resize());
+
+            } catch (error) {
+                document.getElementById('loading').innerText = "K线数据加载失败";
+                console.error(error);
+            }
+        }
+    </script>
+</body>
+</html>

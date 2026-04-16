@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>MyStockQuant 专业控制台</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; background-color: #f4f5f7; flex-direction: row; overflow: hidden;}
+        
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 0 0 rgba(255, 77, 79, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(255, 77, 79, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 77, 79, 0); }
+        }
+        @keyframes blink-text {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        /* =========================================
+           💻 侧边栏及折叠交互样式
+           ========================================= */
+        #sidebar { 
+            width: 320px; background: #fff; display: flex; flex-direction: column; 
+            border-right: 1px solid #ddd; flex-shrink: 0; z-index: 10;
+            transition: width 0.3s ease; overflow: hidden; white-space: nowrap; 
+        }
+        #sidebar.collapsed { width: 0; border: none; }
+
+        #sidebar-controls { transition: max-height 0.3s ease; overflow: hidden; max-height: 500px; }
+        #sidebar-controls.collapsed { max-height: 0; }
+
+        .toggle-controls-btn { 
+            width: 100%; padding: 4px; background: #e6f7ff; color: #1890ff; 
+            border: none; border-bottom: 1px solid #ddd; font-size: 12px; 
+            cursor: pointer; text-align: center; display: flex; justify-content: center; align-items: center;
+        }
+        .toggle-controls-btn:hover { background: #bae7ff; }
+
+        .control-panel { padding: 12px 15px; background: #f8f9fa; border-bottom: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; }
+        .btn-run { width: 100%; padding: 10px; background: #1890ff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin: 0; }
+        .btn-log { width: 100%; padding: 10px; background: #fff; color: #faad14; border: 1px solid #faad14; border-radius: 6px; font-weight: bold; cursor: pointer; margin: 0; transition: 0.2s;}
+        .btn-log:hover { background: #fffbe6; }
+        .btn-reset { width: 100%; padding: 10px; background: #fff; color: #ff4d4f; border: 1px solid #ff4d4f; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; margin: 0; }
+        
+        .filter-panel { padding: 10px 15px; background: #fafafa; border-bottom: 1px solid #ddd; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .filter-label { display: flex; align-items: center; cursor: pointer; color: #333; }
+        .filter-label input { margin-right: 8px; }
+        .divider { height: 1px; background: #ddd; margin: 2px 0; }
+
+        .tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid #ddd; flex-shrink: 0;}
+        .tab { width: 50%; padding: 10px 0; text-align: center; cursor: pointer; font-size: 13px; background: #f0f0f0; border-right: 1px solid #e8e8e8; border-bottom: 1px solid #e8e8e8;}
+        .tab.active { background: #fff; font-weight: bold; color: #1890ff; border-bottom: 2px solid #1890ff; }
+        
+        #stock-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #fff;}
+        .stock-item { padding: 12px 15px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; background: #fff;}
+        .stock-item:hover { background-color: #f5f5f5; }
+        .stock-item.active { background-color: #e6f7ff; border-left: 4px solid #1890ff; }
+        .stock-item.sortable-ghost { opacity: 0.4; background-color: #f0f0f0; }
+
+        .stock-item.buy-alert { background: linear-gradient(135deg, #fff1f0 0%, #ffffff 100%); border-left: 4px solid #ff4d4f !important; animation: pulse-glow 2s infinite; margin: 2px 0; }
+        .stock-item.buy-alert:hover { background: #fff1f0; }
+        .stock-item.buy-alert .stock-name { color: #cf1322; }
+        .badge-buy { background: #ff4d4f; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 8px; display: inline-block; animation: blink-text 1.5s infinite; box-shadow: 0 2px 4px rgba(255,77,79,0.3); }
+
+        .stock-info { flex: 1; cursor: pointer; display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; }
+        .stock-actions { display: flex; gap: 15px; align-items: center; margin-left: 10px;}
+        .btn-pin { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.5; transition: 0.2s; padding: 0;}
+        .btn-pin:hover { opacity: 1; transform: scale(1.2); }
+        .drag-handle { cursor: grab; color: #bbb; font-size: 18px; user-select: none; }
+        .drag-handle:active { cursor: grabbing; color: #666; }
+
+        /* =========================================
+           📈 主内容区 (右侧)
+           ========================================= */
+        #main-content { flex: 1; padding: 15px; min-width: 0; position: relative; }
+        
+        #chart-view { display: flex; flex-direction: column; gap: 12px; height: 100%; }
+        .top-panel { display: flex; gap: 10px; align-items: stretch; flex-shrink: 0; height: 50px;}
+        #btn-toggle-sidebar { background: #1e1e1e; color: #fff; border: none; border-radius: 8px; padding: 0 20px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .data-display { flex: 1; background: #1e1e1e; color: #00ffcc; padding: 0 15px; border-radius: 8px; font-family: monospace; font-size: 14px; display: flex; align-items: center; justify-content: center; overflow-x: auto; white-space: nowrap; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .btn-action { padding: 0 25px; border: 1px solid #ff4d4f; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.2s; background: #2b2b2b; color: #ff4d4f; height: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .btn-action:hover { background: #ff4d4f; color: #fff; }
+        #chart-container { flex: 1; min-height: 400px; background: #fff; border-radius: 8px; padding: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+        #log-view { display: none; flex-direction: column; height: 100%; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); overflow: hidden; }
+        .log-header { padding: 15px 20px; background: #1e1e1e; color: #fff; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .log-close-btn { background: #333; border: 1px solid #555; color: #fff; border-radius: 4px; padding: 6px 15px; cursor: pointer; font-weight: bold; transition: 0.2s;}
+        .log-close-btn:hover { background: #ff4d4f; border-color: #ff4d4f; }
+        .log-content { flex: 1; overflow-y: auto; padding: 20px; background: #f4f5f7; }
+        
+        .log-date-group { margin-bottom: 25px; max-width: 800px; margin-left: auto; margin-right: auto; }
+        .log-date-title { font-size: 15px; font-weight: bold; color: #666; margin-bottom: 12px; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
+        .log-item { background: #fff; padding: 15px 20px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); border-left: 5px solid #ccc;}
+        .log-item.source-自动处理 { border-color: #1890ff; }
+        .log-item.source-按钮处理 { border-color: #faad14; }
+        .log-item.source-手工干预 { border-color: #ff4d4f; }
+        .log-item-header { display: flex; justify-content: space-between; margin-bottom: 8px; color: #555; font-size: 13px;}
+        .log-item-title { font-weight: bold; color: #333; font-size: 16px; display: flex; align-items: center;}
+        
+        /* 🔥 新增：日志快看 K 线按钮样式 */
+        .btn-quick-look { font-size: 12px; background: #e6f7ff; color: #1890ff; padding: 3px 8px; border-radius: 4px; margin-left: 12px; cursor: pointer; border: 1px solid #91d5ff; transition: 0.2s; user-select: none;}
+        .btn-quick-look:hover { background: #1890ff; color: #fff; }
+
+        .log-item-detail { color: #d46b08; font-weight: bold; margin-bottom: 12px; margin-top: 5px; font-size: 14px;}
+        .log-select { width: 100%; padding: 8px; border: 1px dashed #bbb; border-radius: 6px; font-size: 13px; background: #fafafa; outline: none; cursor: pointer; transition: 0.2s;}
+        .log-select:hover { border-color: #1890ff; }
+
+        /* =========================================
+           📊 K线专属快捷弹窗 (Modal)
+           ========================================= */
+        #kline-modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; backdrop-filter: blur(2px);}
+        #kline-modal { 
+            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            width: 85%; max-width: 1000px; background: #fff; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); 
+            z-index: 1001; overflow: hidden; flex-direction: column;
+        }
+        .kline-modal-header { padding: 15px 20px; background: #1e1e1e; color: #fff; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ff4d4f;}
+        .kline-modal-close { cursor: pointer; font-size: 28px; color: #ccc; line-height: 1; transition: 0.2s; }
+        .kline-modal-close:hover { color: #ff4d4f; transform: scale(1.1); }
+        #modal-chart-container { height: 550px; width: 100%; padding: 10px; }
+
+        @media (max-width: 768px) {
+            body { flex-direction: column; height: auto; overflow-x: hidden; }
+            #sidebar { width: 100%; height: 50vh; border-right: none; border-bottom: 1px solid #ddd; }
+            #sidebar.collapsed { height: 0; display: none; }
+            #main-content { width: 100%; height: auto; padding: 10px; }
+            .top-panel { height: 45px; }
+            .data-display { font-size: 12px; justify-content: flex-start; }
+            .btn-action { padding: 0 15px; }
+            #chart-container { min-height: 500px; }
+            #chart-view { height: 500px; }
+            #log-view { height: 500px; }
+            #kline-modal { width: 95%; } 
+            #modal-chart-container { height: 400px; }
+        }
+        
+        .lcd-item { margin: 0 10px; }
+        .tag { font-size: 10px; padding: 1px 4px; border-radius: 3px; margin-left: 5px; vertical-align: top;}
+    </style>
+</head>
+<body>
+
+    <div id="kline-modal-overlay" onclick="closeKlineModal()"></div>
+    <div id="kline-modal">
+        <div class="kline-modal-header">
+            <span id="kline-modal-title" style="font-weight: bold; font-size: 16px;">加载中...</span>
+            <span class="kline-modal-close" onclick="closeKlineModal()">×</span>
+        </div>
+        <div id="modal-chart-container"></div>
+    </div>
+
+    <div id="sidebar">
+        <button class="toggle-controls-btn" onclick="toggleControls()">
+            <span id="auth-icon" style="margin-right: 5px;">🔒</span> 
+            <span id="control-text">🔼 收起上方控制台</span>
+        </button>
+        <div id="sidebar-controls">
+            <div class="control-panel">
+                <button class="btn-run" onclick="runStrategy()">⚙️ 增量同步</button>
+                <button class="btn-log" onclick="openLogView()">📜 操作日志与纠偏</button>
+                <button class="btn-reset" onclick="resetSystem()">⚠️ 系统深度重置</button>
+            </div>
+            <div class="filter-panel">
+                <label class="filter-label" style="font-weight: bold; color: #1890ff;">
+                    <input type="checkbox" id="chk-all" onchange="toggleAllFilters()"> 全选
+                </label>
+                <div class="divider"></div>
+                <label class="filter-label"><input type="checkbox" id="chk-st" class="sub-filter" onchange="checkFilters()"> 包含 ST</label>
+                <label class="filter-label"><input type="checkbox" id="chk-cy" class="sub-filter" onchange="checkFilters()"> 包含创业板</label>
+                <label class="filter-label"><input type="checkbox" id="chk-kc" class="sub-filter" onchange="checkFilters()"> 包含科创板</label>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab(1, this)" id="tab-1">试盘 (0)</div>
+            <div class="tab" onclick="switchTab(2, this)" id="tab-2">回踩 (0)</div>
+            <div class="tab" onclick="switchTab(3, this)" id="tab-3">突破 (0)</div>
+            <div class="tab" onclick="switchTab(99, this)" id="tab-99">废弃 (0)</div>
+        </div>
+        <div id="stock-list"></div>
+    </div>
+
+    <div id="main-content">
+        <div id="anchor-point"></div>
+        
+        <div id="chart-view">
+            <div class="top-panel">
+                <button id="btn-toggle-sidebar" onclick="toggleSidebar()" title="隐藏/显示股票列表">☰</button>
+                <div class="data-display" id="kline-detail">👈 选择股票查看行情</div>
+                <div id="action-buttons"></div>
+            </div>
+            <div id="chart-container"></div>
+        </div>
+
+        <div id="log-view">
+            <div class="log-header">
+                <span style="font-size: 18px; font-weight: bold;">📜 审计日志与上帝模式</span>
+                <button class="log-close-btn" onclick="closeLogView()">⬅ 返回看盘</button>
+            </div>
+            <div class="log-content" id="log-container">加载中...</div>
+        </div>
+
+    </div>
+
+    <script>
+        let isAuthUnlocked = false;
+        function requireAuth(actionCallback) {
+            if (isAuthUnlocked) { actionCallback(); return; }
+            const pwd = prompt("⚠️ 系统风控拦截\n\n此操作将修改核心策略数据或UI状态。\n请输入架构师授权密码以解锁本次会话：");
+            if (pwd === "888") {
+                isAuthUnlocked = true;
+                document.getElementById('auth-icon').innerText = '🔓'; 
+                actionCallback(); 
+            } else if (pwd !== null) { alert("❌ 密码错误，拒绝操作！"); }
+        }
+
+        let currentStatus = 1;
+        let currentCode = null;
+        let globalFullData = []; 
+        const myChart = echarts.init(document.getElementById('chart-container'));
+        let modalChart = null; // 弹窗图表实例
+
+        window.addEventListener('resize', () => {
+            myChart.resize();
+            if(modalChart) modalChart.resize();
+        });
+
+        function toggleAllFilters() { const isChecked = document.getElementById('chk-all').checked; document.querySelectorAll('.sub-filter').forEach(chk => chk.checked = isChecked); reloadAll(); }
+        function checkFilters() { const allChecked = Array.from(document.querySelectorAll('.sub-filter')).every(chk => chk.checked); document.getElementById('chk-all').checked = allChecked; reloadAll(); }
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); setTimeout(() => { myChart.resize(); if(modalChart) modalChart.resize(); }, 300); }
+        function toggleControls() { const controls = document.getElementById('sidebar-controls'); controls.classList.toggle('collapsed'); document.getElementById('control-text').innerText = controls.classList.contains('collapsed') ? "🔽 展开上方控制台" : "🔼 收起上方控制台"; }
+
+        function initSortable() {
+            Sortable.create(document.getElementById('stock-list'), {
+                handle: '.drag-handle', animation: 150, ghostClass: 'sortable-ghost',
+                onEnd: function (evt) { if (!isAuthUnlocked) { requireAuth(() => {}); if (!isAuthUnlocked) { alert("❌ 拖拽排序已撤销，请先验证密码！"); reloadAll(); } } }
+            });
+        }
+
+        function pinToTop(event, elementId) { event.stopPropagation(); requireAuth(() => { const list = document.getElementById('stock-list'); const itemToPin = document.getElementById(elementId); if (itemToPin) { list.insertBefore(itemToPin, list.firstChild); list.scrollTop = 0; itemToPin.style.backgroundColor = '#ffd591'; setTimeout(() => itemToPin.style.backgroundColor = '', 500); } }); }
+
+        function formatVolume(vol) { if (vol >= 100000000) return (vol / 100000000).toFixed(2) + '亿'; if (vol >= 10000) return (vol / 10000).toFixed(2) + '万'; return vol; }
+
+        function updateLCD(dayData, preClose) {
+            const panel = document.getElementById('kline-detail');
+            let pctChg = preClose ? ((dayData.close - preClose) / preClose * 100).toFixed(2) : "0.00";
+            let sign = pctChg > 0 ? '+' : '';
+            let color = dayData.close > dayData.open ? '#ff4d4f' : (dayData.close < dayData.open ? '#52c41a' : '#fff');
+            let pctColor = pctChg > 0 ? '#ff4d4f' : (pctChg < 0 ? '#52c41a' : '#fff');
+            panel.innerHTML = `<span class="lcd-item" style="color:#fff">🗓️ ${dayData.date}</span> | <span class="lcd-item" style="color:#fff">开: ${dayData.open.toFixed(2)}</span> | <span class="lcd-item" style="color:${color}; font-weight:bold;">收: ${dayData.close.toFixed(2)}</span> | <span class="lcd-item" style="color:${pctColor}; font-weight:bold;">幅: ${sign}${pctChg}%</span> | <span class="lcd-item" style="color:#fff">量: ${formatVolume(dayData.volume)}</span> | <span class="lcd-item" style="color:#eeb174; font-weight:bold;">换手: ${dayData.turn.toFixed(2)}%</span>`;
+        }
+
+        function getFilterParams() { return `?st=${document.getElementById('chk-st').checked}&cy=${document.getElementById('chk-cy').checked}&kc=${document.getElementById('chk-kc').checked}`; }
+        function reloadAll() { loadCounts(); loadStockList(); }
+
+        function loadCounts() {
+            fetch('/api/counts' + getFilterParams()).then(res => res.json()).then(data => {
+                document.getElementById('tab-1').innerText = `👀 试盘 (${data['1']})`; document.getElementById('tab-2').innerText = `📉 回踩 (${data['2']})`;
+                document.getElementById('tab-3').innerText = `🔥 突破 (${data['3']})`; document.getElementById('tab-99').innerText = `🗑️ 废弃 (${data['99']})`;
+            });
+        }
+
+        function switchTab(status, element) {
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active')); element.classList.add('active'); currentStatus = status;
+            loadStockList(); document.getElementById('action-buttons').innerHTML = ""; document.getElementById('kline-detail').innerHTML = "👈 选择股票查看行情"; myChart.clear();
+        }
+
+        function loadStockList() {
+            const listDiv = document.getElementById('stock-list'); listDiv.innerHTML = '<div style="padding:15px;">加载中...</div>';
+            fetch(`/api/pool/${currentStatus}` + getFilterParams()).then(res => res.json()).then(stocks => {
+                listDiv.innerHTML = '';
+                if(stocks.length === 0) { listDiv.innerHTML = '<div style="padding:15px; color:gray; text-align:center;">暂无匹配标的</div>'; return; }
+                stocks.forEach((stock) => {
+                    const div = document.createElement('div'); const domId = `stock-item-${stock.code}`; let isBuyPoint = (currentStatus === 3);
+                    div.className = isBuyPoint ? 'stock-item buy-alert' : 'stock-item'; div.id = domId;
+                    let tag = "";
+                    if(stock.code.startsWith('300')) tag += `<span class="tag" style="background:#e6f7ff; color:#1890ff;">创</span>`;
+                    if(stock.code.startsWith('688')) tag += `<span class="tag" style="background:#fff2e8; color:#fa541c;">科</span>`;
+                    if(stock.name.includes('ST')) tag += `<span class="tag" style="background:#fff1f0; color:#f5222d;">ST</span>`;
+                    let buyBadge = isBuyPoint ? `<span class="badge-buy">🚀 突破买点</span>` : "";
+                    
+                    div.innerHTML = `
+                        <div class="stock-info" onclick="selectStockAndActive(this.parentElement, '${stock.code}', '${stock.name}')">
+                            <span class="stock-name" style="font-size:14px; font-weight:bold; margin-right:6px;">${stock.name}</span>
+                            <span style="font-size:12px; color:#888;">(${stock.code})</span>${tag} ${buyBadge}
+                        </div>
+                        <div class="stock-actions">
+                            <button class="btn-pin" onclick="pinToTop(event, '${domId}')" title="置顶该股票">📌</button>
+                            <div class="drag-handle" title="按住拖动排序">⋮⋮</div>
+                        </div>`;
+                    listDiv.appendChild(div);
+                });
+                initSortable();
+            });
+        }
+
+        function selectStockAndActive(element, code, name) {
+            document.querySelectorAll('.stock-item').forEach(el => el.classList.remove('active')); element.classList.add('active');
+            closeLogView(); selectStock(code, name);
+            if (window.innerWidth <= 768) document.getElementById('anchor-point').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function selectStock(code, name) {
+            currentCode = code;
+            const actionDiv = document.getElementById('action-buttons');
+            actionDiv.innerHTML = currentStatus !== 99 ? `<button class="btn-action" onclick="updateStockStatus(99)">🗑️ 离场 / 淘汰</button>` : `<button class="btn-action" style="color:#52c41a; border-color:#52c41a;" onclick="updateStockStatus(0)">♻️ 恢复</button>`;
+            myChart.showLoading();
+            fetch(`/api/kline/${code}`).then(res => res.json()).then(data => {
+                myChart.hideLoading(); globalFullData = data; renderChart(myChart, name, data, true);
+                if(data.length > 0) { let preClose = data.length > 1 ? data[data.length - 2].close : data[0].open; updateLCD(data[data.length - 1], preClose); }
+            });
+        }
+
+        // ==========================================
+        // 📊 K线快捷弹窗系统
+        // ==========================================
+        function openKlineModal(code, name) {
+            document.getElementById('kline-modal-overlay').style.display = 'block';
+            document.getElementById('kline-modal').style.display = 'flex';
+            document.getElementById('kline-modal-title').innerText = `${name} (${code}) - 策略历史走势分析`;
+            
+            if (!modalChart) { modalChart = echarts.init(document.getElementById('modal-chart-container')); }
+            modalChart.resize(); // 极其重要：显示出来后必须重置尺寸
+            modalChart.showLoading();
+
+            fetch(`/api/kline/${code}`).then(res => res.json()).then(data => {
+                modalChart.hideLoading();
+                renderChart(modalChart, name, data, false); // 复用渲染逻辑
+            });
+        }
+
+        function closeKlineModal() {
+            document.getElementById('kline-modal-overlay').style.display = 'none';
+            document.getElementById('kline-modal').style.display = 'none';
+            if(modalChart) modalChart.clear();
+        }
+
+        // 统一的图表渲染引擎 (支持主图和弹窗图)
+        // 统一的图表渲染引擎 (支持主图和弹窗图)
+        function renderChart(chartInstance, name, rawData, bindClick = false) {
+            const dates = rawData.map(item => item.date);
+            const values = rawData.map(item => [item.open, item.close, item.low, item.high]);
+            const volumes = rawData.map((item, index) => [index, item.volume, item.open > item.close ? -1 : 1]);
+
+            // 🔥 核心优化：动态计算“近半年”的起始点（约 120 个交易日）
+            const totalPoints = dates.length;
+            const startIdx = Math.max(0, totalPoints - 120); // 确保不会超出数组越界
+
+            const option = {
+                title: { text: name, left: 'center', textStyle: { fontSize: 14 } },
+                tooltip: { 
+                    trigger: 'axis', axisPointer: { type: 'cross' }, backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    formatter: function(params) {
+                        let i = params[0].dataIndex; let d = rawData[i]; let preClose = i > 0 ? rawData[i-1].close : d.open;
+                        let pctChg = ((d.close - preClose) / preClose * 100).toFixed(2); let pctColor = pctChg > 0 ? '#ff4d4f' : (pctChg < 0 ? '#52c41a' : '#333'); let sign = pctChg > 0 ? '+' : '';
+                        return `<div style="font-family: sans-serif; font-size: 13px;"><div style="margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 5px;"><b>${d.date}</b></div>开: ${d.open.toFixed(2)} &nbsp;&nbsp; 收: <span style="color:${d.close>d.open?'#ff4d4f':'#52c41a'}">${d.close.toFixed(2)}</span><br/>高: ${d.high.toFixed(2)} &nbsp;&nbsp; 低: ${d.low.toFixed(2)}<br/>涨幅: <b style="color:${pctColor}">${sign}${pctChg}%</b><br/>量: ${formatVolume(d.volume)} &nbsp;&nbsp; 换手: <b style="color:#d46b08">${d.turn.toFixed(2)}%</b></div>`;
+                    }
+                },
+                axisPointer: {
+                    link: [{ xAxisIndex: 'all' }]
+                },
+                grid: [{ left: '8%', right: '5%', height: '55%' }, { left: '8%', right: '5%', top: '75%', height: '15%' }],
+                xAxis: [{ type: 'category', data: dates }, { type: 'category', gridIndex: 1, data: dates, show: false }],
+                yAxis: [{ scale: true, splitArea: { show: true } }, { scale: true, gridIndex: 1, show: false }],
+                
+                // 🔥 核心修改：使用 startValue 和 endValue 替代百分比，精准锁定默认显示的 K 线根数
+                dataZoom: [
+                    { type: 'inside', xAxisIndex: [0, 1], startValue: startIdx, endValue: totalPoints - 1 },
+                    { type: 'slider', xAxisIndex: [0, 1], bottom: '2%', startValue: startIdx, endValue: totalPoints - 1 }
+                ],
+                
+                series: [
+                    { type: 'candlestick', data: values, itemStyle: { color: '#ef232a', color0: '#14b143', borderColor: '#ef232a', borderColor0: '#14b143' } },
+                    { type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, itemStyle: { color: p => p.data[2] > 0 ? '#ef232a' : '#14b143' } }
+                ]
+            };
+            chartInstance.setOption(option);
+            
+            if (bindClick) {
+                chartInstance.off('click');
+                chartInstance.on('click', p => {
+                    let i = p.dataIndex; let preClose = i > 0 ? globalFullData[i-1].close : globalFullData[i].open;
+                    updateLCD(globalFullData[i], preClose);
+                });
+            }
+        }
+
+        // ==========================================
+        // 📜 视图切换与审计日志系统
+        // ==========================================
+        function openLogView() { document.getElementById('chart-view').style.display = 'none'; document.getElementById('log-view').style.display = 'flex'; fetchLogs(); }
+        function closeLogView() { document.getElementById('log-view').style.display = 'none'; document.getElementById('chart-view').style.display = 'flex'; setTimeout(() => myChart.resize(), 50); }
+
+        function fetchLogs() {
+            const container = document.getElementById('log-container'); 
+            container.innerHTML = '<div style="text-align:center; padding:50px; color:#888;">正在调取数据防伪记录...</div>';
+            
+            fetch('/api/logs').then(res => res.json()).then(data => {
+                container.innerHTML = '';
+                
+                // 🛡️ 防御 1：如果数据是空的
+                if(!data || Object.keys(data).length === 0) { 
+                    container.innerHTML = '<div style="text-align:center; padding:50px; color:#888;">暂无操作记录</div>'; 
+                    return; 
+                }
+
+                // 🛡️ 防御 2：如果后端返回的是一维数组 ['暂无日志记录'] 或 ['2026-04-15 进行了某操作']
+                if (Array.isArray(data)) {
+                    if (data[0] === "暂无日志记录") {
+                        container.innerHTML = '<div style="text-align:center; padding:50px; color:#888;">暂无操作记录</div>';
+                        return;
+                    }
+                    // 如果后端传的是纯字符串数组，降级为简易列表展示，防止报错
+                    data.forEach(line => {
+                        container.innerHTML += `<div class="log-item" style="border-left: 5px solid #ccc;"><div class="log-item-detail">${line}</div></div>`;
+                    });
+                    return;
+                }
+
+                // 🚀 核心渲染引擎：处理原本豪华的、按日期分组的对象结构
+                for(let date in data) {
+                    let groupHtml = `<div class="log-date-group"><div class="log-date-title">🗓️ ${date}</div>`;
+                    
+                    // 确保拿到的是个数组，再进行 forEach
+                    if (Array.isArray(data[date])) {
+                        data[date].forEach(log => {
+                            let sourceIcon = log.source === '自动处理' ? '🤖' : (log.source === '按钮处理' ? '🖱️' : '🖐️');
+                            groupHtml += `
+                                <div class="log-item source-${log.source || '手工干预'}">
+                                    <div class="log-item-header">
+                                        <span>${sourceIcon} ${log.source || '系统日志'}</span>
+                                        <span>${log.time || ''}</span>
+                                    </div>
+                                    <div class="log-item-title">
+                                        ${log.name || '未知标的'} <span style="font-size:12px;color:#888;margin-right:8px;">(${log.code || '----'})</span>
+                                        <span class="btn-quick-look" onclick="openKlineModal('${log.code}', '${log.name}')">📊 快捷看图</span>
+                                    </div>
+                                    <div class="log-item-detail">${log.detail || log}</div>
+                                    <select class="log-select" onchange="forceRestore(this, '${log.code}', '${log.name}')">
+                                        <option value="">⚡ 上帝模式：强制变更为...</option>
+                                        <option value="1">👀 放入试盘池 (1)</option>
+                                        <option value="2">📉 放入回踩池 (2)</option>
+                                        <option value="3">🔥 放入突破池 (3)</option>
+                                        <option value="99">🗑️ 移入废弃池 (99)</option>
+                                    </select>
+                                </div>`;
+                        });
+                    }
+                    groupHtml += `</div>`;
+                    container.innerHTML += groupHtml;
+                }
+            }).catch(err => {
+                container.innerHTML = '<div style="text-align:center; padding:50px; color:#ff4d4f;">日志解析失败，请检查数据格式</div>';
+                console.error("解析日志错误：", err);
+            });
+        }
+
+        function forceRestore(selectElement, code, name) {
+            const newStatus = selectElement.value; if(!newStatus) return; 
+            requireAuth(() => {
+                if(confirm(`⚠️ 上帝视角\n\n确定要将 ${name} (${code}) 强制转移到状态 [${newStatus}] 吗？`)) {
+                    fetch('/api/update_status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code, new_status: parseInt(newStatus), source: '手工干预' }) }).then(() => { alert('✅ 状态强制覆盖成功！'); selectElement.value = ""; reloadAll(); fetchLogs(); });
+                } else { selectElement.value = ""; }
+            });
+        }
+
+function runStrategy() { 
+            requireAuth(() => {
+                // 1. 点击后立刻改变按钮状态，防止重复点击
+                const btn = document.querySelector('.btn-run');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = "⏳ 正在拉取全市场数据，请耐心等待...";
+                btn.disabled = true;
+                btn.style.background = "#555";
+                
+                fetch('/api/run_strategy', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({source: '按钮处理'})
+                }).then(res => res.json()).then(d => { 
+                    alert(d.msg); 
+                    // 2. 执行完毕后恢复按钮状态
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    btn.style.background = "#1890ff";
+                    reloadAll(); 
+                }).catch(err => {
+                    alert('请求超时或发生错误，请查看服务器日志！');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    btn.style.background = "#1890ff";
+                }); 
+            });
+        }
+        function resetSystem() { requireAuth(() => { if(!confirm("⚠️ 二次确认：确定要深度重置并回溯全市场吗？")) return; fetch('/api/reset_bootstrap', {method: 'POST'}).then(res => res.json()).then(d => { alert(d.msg); reloadAll(); }); }); }
+        function updateStockStatus(ns) { requireAuth(() => { fetch('/api/update_status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: currentCode, new_status: ns, source: '手工干预' }) }).then(() => reloadAll()); }); }
+
+        reloadAll();
+    </script>
+</body>
+</html>
