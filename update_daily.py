@@ -31,6 +31,9 @@ def update_daily_k_lines():
     # ==========================================
     # 2. 核心拉取执行引擎
     # ==========================================
+    # ==========================================
+    # 2. 核心拉取执行引擎
+    # ==========================================
     def fetch_codes(codes_set, batch_name):
         if not codes_set: return
         print(f"\n📦 开始同步 [{batch_name}] 共 {len(codes_set)} 只标的...")
@@ -48,9 +51,19 @@ def update_daily_k_lines():
             start_date_obj = datetime.datetime.strptime(last_date, '%Y-%m-%d') + datetime.timedelta(days=1)
             start_date = start_date_obj.strftime('%Y-%m-%d')
             
-            # 请求 BaoStock
+            # 🛠️ 修复 1：请求前，动态为 BaoStock 拼接 9 位代码
+            bs_code = code
+            if len(code) == 6:  # 只有纯 6 位数字才需要拼接
+                if code.startswith('6'):
+                    bs_code = f"sh.{code}"
+                elif code.startswith('0') or code.startswith('3'):
+                    bs_code = f"sz.{code}"
+                elif code.startswith('8') or code.startswith('4') or code.startswith('9'):
+                    bs_code = f"bj.{code}"
+            
+            # 请求 BaoStock，传入拼接好的 bs_code (如 sz.000001)
             rs = bs.query_history_k_data_plus(
-                code,
+                bs_code,
                 "date,code,open,high,low,close,volume,amount,turn",
                 start_date=start_date, end_date=today,
                 frequency="d", adjustflag="3"
@@ -58,7 +71,11 @@ def update_daily_k_lines():
             
             data_list = []
             while (rs.error_code == '0') & rs.next():
-                data_list.append(rs.get_row_data())
+                row = rs.get_row_data()
+                # 🛠️ 修复 2：保存回数据库前，强制把代码改回纯净的 6 位格式 (code)，
+                # 防止 sz.000001 混入数据库，导致后续 App 端查询不到数据！
+                row[1] = code 
+                data_list.append(row)
             
             if data_list:
                 # 批量写入数据库

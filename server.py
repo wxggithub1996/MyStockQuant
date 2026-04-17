@@ -92,17 +92,38 @@ def read_root():
     with open("index.html", "r", encoding="utf-8") as f:
         return f.read()
 
+from fastapi import Query
+
+# 🚨 修改原来的 counts 接口，增加 show_special 参数
 @app.get("/api/counts")
-def get_counts(st: bool = True, cy: bool = True, kc: bool = True):
+def get_counts(show_special: str = "false"): # 强制声明为字符串接收
+    import sqlite3
+    from config import DB_PATH
+    
+    # 🚨 极度严谨的布尔转换逻辑
+    # 只有当参数明确为 'true' (不区分大小写) 时，才判定为显示特殊票
+    is_show_actual = show_special.lower() == "true"
+    
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT status, code, name FROM stock_pipeline", conn)
+    cursor = conn.cursor()
+    
+    sql = "SELECT status, COUNT(*) FROM stock_pipeline WHERE 1=1"
+    
+    # 如果判定为 False，则执行过滤逻辑（不显示ST和科创）
+    if not is_show_actual:
+        sql += " AND name NOT LIKE '%ST%' AND code NOT LIKE '688%'"
+        
+    sql += " GROUP BY status"
+    
+    cursor.execute(sql)
+    rows = cursor.fetchall()
     conn.close()
-    if not df.empty:
-        if not st: df = df[~df['name'].str.contains('ST', na=False)]
-        if not cy: df = df[~df['code'].str.startswith('300', na=False)]
-        if not kc: df = df[~df['code'].str.startswith('688', na=False)]
-    counts = df['status'].value_counts().to_dict()
-    return {"1": counts.get(1, 0), "2": counts.get(2, 0), "3": counts.get(3, 0), "99": counts.get(99, 0)}
+    
+    counts = {1: 0, 2: 0, 3: 0, 99: 0}
+    for row in rows:
+        counts[row[0]] = row[1]
+        
+    return counts
 
 import pandas as pd
 import sqlite3
@@ -126,21 +147,28 @@ def get_web_pool(status: int):
 @app.get("/api/pool/app/{status}")
 def get_app_pool(status: int):
     conn = sqlite3.connect(DB_PATH)
-    
     query = """
-        SELECT code, name, latest_price as price, latest_change as change, turnover, volume 
-        FROM stock_pipeline WHERE status=?
+        SELECT 
+            p.code, 
+            p.name, 
+            p.latest_price as price,
+            p.latest_change as change,
+            p.turnover,
+            p.volume as amount, -- sync_app_data 中把成交额存进了 volume 字段
+            (SELECT volume FROM daily_k_line k WHERE k.code = p.code ORDER BY date DESC LIMIT 1) as raw_volume -- 原始成交量(股)
+        FROM stock_pipeline p
+        WHERE p.status = ?
     """
     import pandas as pd
-    
-    # ⚠️ 修复：必须加上 params=(status,)，把前端传来的 status 填入 SQL 的问号中
     df = pd.read_sql(query, conn, params=(status,))
-    
     conn.close()
     
     if df.empty:
         return []
+        
+    df = df.fillna("")
     return df.to_dict(orient='records')
+
 
 @app.get("/api/kline/{code}")
 def get_kline(code: str):
@@ -153,21 +181,23 @@ def get_kline(code: str):
 @app.post("/api/run_strategy")
 def api_run_strategy(req: StrategyReq):
     try:
-        # 1. 强制先运行增量数据拉取
         from update_daily import update_daily_k_lines
         update_daily_k_lines() 
         
-        # 为了防止数据库锁死，这里最好给 SQLite 一点缓冲时间
         import time
         time.sleep(2)
         
-        # 2. 数据更新完毕后，再执行大脑引擎
         from strategy_engine import run_strategy_engine
         run_strategy_engine(source=req.source)
         
-        return {"status": "success", "msg": "✅ 数据增量同步与策略流转已全部完成！"}
+        # 💥 核心修复：执行完毕后，强制调用 App 数据格式化脚本！
+        from sync_app_data import sync_data_to_app_table
+        sync_data_to_app_table()
+        
+        return {"status": "success", "msg": "✅ 数据同步、策略流转及App视图更新完毕！"}
     except Exception as e:
         return {"status": "error", "msg": str(e)}
+
 
 class StatusUpdate(BaseModel):
     code: str

@@ -1,83 +1,413 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>K线图表</title>
+    <meta charset="utf-8">
+    <title></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script type="text/javascript" src="https://js.cdn.aliyun.dcloud.net.cn/dev/uni-app/uni.webview.1.5.2.js"></script>
     <style>
-        /* 绝对满屏，去掉所有滚动条和边距 */
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #ffffff; overflow: hidden; }
-        #chart-container { width: 100%; height: 100%; }
-        .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #999; font-size: 14px; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; width: 100%; height: 100%; font-family: sans-serif; }
+        
+        #app-container { width: 100%; height: 100%; display: flex; transition: transform 0.3s ease; }
+        
+        /* 模式A：伪横屏 */
+        body.is-landscape-fake #app-container {
+            width: 100vh; height: 100vw;
+            transform: rotate(90deg); transform-origin: center center;
+            position: absolute; top: 50%; left: 50%;
+            margin-top: -50vw; margin-left: -50vh;
+        }
+
+        /* 模式B：原生横屏 */
+        body.is-landscape-native #app-container {
+            width: 100%; height: 100%; transform: none; position: static; margin: 0;
+        }
+
+        /* 侧边栏 */
+        #sidebar { 
+            width: 120px; background: #f8f9fa; border-right: 1px solid #eee; display: flex; flex-direction: column; 
+            transition: margin-left 0.3s ease; flex-shrink: 0; z-index: 10; height: 100%;
+            /* 适配原生横屏时的左侧刘海 */
+            padding-left: env(safe-area-inset-left);
+            /* 🚨 修复 1：适配竖屏时的顶部状态栏，防止"同组标的"被遮挡 */
+            padding-top: max(10px, env(safe-area-inset-top));
+        }
+        #sidebar.collapsed { margin-left: calc(-120px - env(safe-area-inset-left)); }
+        .sidebar-title { padding: 10px; font-size: 12px; font-weight: bold; text-align: center; background: #fff; border-bottom: 1px solid #eee; color: #1890ff; }
+        #stock-list { flex: 1; overflow-y: auto; }
+        .stock-item { padding: 12px 10px; font-size: 13px; border-bottom: 1px solid #f0f0f0; display: flex; flex-direction: column; cursor: pointer; }
+        .stock-item.active { background: #e6f7ff; border-left: 3px solid #1890ff; }
+        .s-name { font-weight: bold; color: #333; }
+        .s-code { font-size: 10px; color: #999; margin-top: 2px; }
+
+        /* 主体区域 */
+        #main { flex: 1; display: flex; flex-direction: column; position: relative; height: 100%; min-width: 0; }
+        
+        #toggle-sidebar-btn {
+            position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+            width: 15px; height: 40px; background: #fff; border: 1px solid #ddd; border-left: none;
+            display: flex; justify-content: center; align-items: center; font-size: 12px; color: #999;
+            border-radius: 0 4px 4px 0; z-index: 20; box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+        }
+
+        /* 顶部控制栏 */
+        #header { 
+            display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; 
+            border-bottom: 1px solid #eee; flex-shrink: 0; background: #fff; 
+            /* 适配竖屏顶部状态栏 */
+            padding-top: max(10px, env(safe-area-inset-top));
+        }
+        #stock-title { font-size: 16px; font-weight: bold; color: #333; }
+        #btn-rotate { background: #f0f7ff; color: #1890ff; border: 1px solid #1890ff; padding: 4px 10px; border-radius: 15px; font-size: 12px; font-weight: bold;}
+        
+        /* 横屏专属：数据横幅 (LCD) */
+        #landscape-banner { 
+            display: none; padding: 5px 15px; background: #fff; border-bottom: 1px solid #eee; 
+            font-size: 11px; flex-shrink: 0; justify-content: space-between; align-items: center;
+        }
+        .lcd-block { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+        .lcd-row { display: flex; gap: 4px; color: #666; margin: 1px 0;}
+        .val-red { color: #e83828 !important; font-weight: bold; }
+        .val-green { color: #00a854 !important; font-weight: bold; }
+        .val-normal { color: #333; font-weight: bold; }
+
+        /* 横屏 UI 微调 */
+        body.is-landscape-fake #landscape-banner, body.is-landscape-native #landscape-banner { display: flex; }
+        body.is-landscape-fake #header, body.is-landscape-native #header { padding: 4px 15px; padding-top: 4px; } 
+        body.is-landscape-fake #stock-title, body.is-landscape-native #stock-title { font-size: 14px; }
+        body.is-landscape-fake #sidebar, body.is-landscape-native #sidebar { 
+            width: 140px; 
+            padding-top: 0; /* 🚨 修复 1补充：横屏时不需要顶部安全距离，恢复正常 */
+        }
+        body.is-landscape-fake #sidebar.collapsed, body.is-landscape-native #sidebar.collapsed { margin-left: calc(-140px - env(safe-area-inset-left)); }
+
+        #chart { flex: 1; width: 100%; min-height: 200px; position: relative; }
+        .loading { 
+            position: absolute; 
+            top: 40%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            color: #999; 
+            font-size: 14px; 
+            z-index: 99; 
+            /* background: rgba(255,255,255,0.8); 
+            padding: 10px 20px; 
+            border-radius: 8px;  */
+        }
+        /* 🚀 新增一个用于显示 Loading 样式的类 */
+        .loading.show-style {
+            background: rgba(255,255,255,0.8);
+            padding: 10px 20px;
+            border-radius: 8px;
+        }
+
+        /* 🚀 新增一个专门用于隐藏的类 */
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
-    <div id="loading" class="loading">正在加载 K 线数据...</div>
-    <div id="chart-container"></div>
+    <div id="app-container">
+        <div id="sidebar" class="collapsed">
+            <div class="sidebar-title">同组标的</div>
+            <div id="stock-list"></div>
+        </div>
+        
+        <div id="main">
+            <div id="toggle-sidebar-btn" onclick="toggleSidebar()">▶</div>
+            <div id="loading" class="loading hidden"></div>
+            
+            <div id="header">
+                <span id="stock-title">加载中...</span>
+                <span id="btn-rotate" onclick="toggleLandscapeBtn()">⇋ 横屏模式</span>
+            </div>
+
+            <div id="landscape-banner">
+                <div class="lcd-block" style="width: 50px;">
+                    <span id="lcd-name" style="font-size: 13px; font-weight: bold; color: #333;">--</span>
+                    <span id="lcd-code" style="color: #999; font-size: 10px;">--</span>
+                </div>
+                <div class="lcd-block">
+                    <span id="lcd-price" style="font-size: 16px; line-height: 1;">--</span>
+                    <span id="lcd-change" style="font-size: 11px;">--</span>
+                </div>
+                <div class="lcd-block">
+                    <div class="lcd-row">高 <span id="lcd-high" class="val-normal">--</span></div>
+                    <div class="lcd-row">低 <span id="lcd-low" class="val-normal">--</span></div>
+                </div>
+                <div class="lcd-block">
+                    <div class="lcd-row">开 <span id="lcd-open" class="val-normal">--</span></div>
+                    <div class="lcd-row">换 <span id="lcd-turn" class="val-normal">--</span></div>
+                </div>
+                <div class="lcd-block">
+                    <div class="lcd-row">量 <span id="lcd-vol" class="val-normal">--</span></div>
+                    <div class="lcd-row">额 <span id="lcd-amt" class="val-normal">--</span></div>
+                </div>
+            </div>
+
+            <div id="chart"></div>
+        </div>
+    </div>
 
     <script>
-        // 1. 从 App 传来的 URL 中获取股票代码
         const urlParams = new URLSearchParams(window.location.search);
-        const stockCode = urlParams.get('code');
+        let currentCode = urlParams.get('code') || '';
+        let currentName = '行情详情';
+        try { currentName = decodeURIComponent(urlParams.get('name') || ''); } catch(e) {}
+        const currentStatus = urlParams.get('status') || 1;
+        
+        let isFakeLandscapeRequested = false; 
+        let isLandscapeUI = false; 
+        
+        let globalRawData = [];
+        let chart = null;
 
-        if (!stockCode) {
-            document.getElementById('loading').innerText = "未获取到股票代码";
-        } else {
-            initChart(stockCode);
+        if (currentCode) document.getElementById('stock-title').innerText = `${currentName} (${currentCode})`;
+
+        try { chart = echarts.init(document.getElementById('chart')); } catch (e) {}
+
+        function formatVol(v) {
+            if (!v) return '--';
+            if (v >= 100000000) return (v / 100000000).toFixed(2) + '亿';
+            if (v >= 10000) return (v / 10000).toFixed(0) + '万';
+            return v.toFixed(0);
+        }
+        function formatHand(v) {
+            if (!v) return '--';
+            let hands = v / 100;
+            if (hands >= 10000) return (hands / 10000).toFixed(2) + '万手';
+            return hands.toFixed(0) + '手';
         }
 
-        async function initChart(code) {
-            const chartDom = document.getElementById('chart-container');
-            const myChart = echarts.init(chartDom);
+        // ==========================================
+        // 🔄 终极横竖屏检测系统
+        // ==========================================
+        function checkOrientation() {
+            const isPhysicalLandscape = window.innerWidth > window.innerHeight;
             
-            try {
-                // 2. 向你的 Python 后端请求这只股票的 K 线数据
-                // (注意：这里假设你之前 Web 端的接口是 /api/kline/{code})
-                const response = await fetch(`/api/kline/${code}`);
-                const data = await response.json();
-
-                // 3. 数据清洗 (请根据你后端的实际 JSON 格式微调这里的 mapping)
-                // 假设后端返回: [{date: '2026-04-10', open: 10, close: 11, low: 9, high: 12}, ...]
-                const categoryData = data.map(item => item.date);
-                const values = data.map(item => [item.open, item.close, item.low, item.high]);
-
-                // 4. ECharts 经典 K 线配置
-                const option = {
-                    animation: false,
-                    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-                    grid: { left: '10%', right: '5%', bottom: '15%', top: '5%' },
-                    xAxis: { type: 'category', data: categoryData, boundaryGap: false },
-                    yAxis: { scale: true, splitArea: { show: true } },
-                    dataZoom: [
-                        { type: 'inside', start: 50, end: 100 }, // 默认看最近一半的数据
-                        { show: true, type: 'slider', top: '90%', start: 50, end: 100 }
-                    ],
-                    series: [
-                        {
-                            name: '日K',
-                            type: 'candlestick',
-                            data: values,
-                            itemStyle: {
-                                color: '#e83828',       // 上涨为红
-                                color0: '#00a854',      // 下跌为绿
-                                borderColor: '#e83828',
-                                borderColor0: '#00a854'
-                            }
-                        }
-                    ]
-                };
-
-                document.getElementById('loading').style.display = 'none';
-                myChart.setOption(option);
-
-                // 随着手机屏幕旋转自动调整大小
-                window.addEventListener('resize', () => myChart.resize());
-
-            } catch (error) {
-                document.getElementById('loading').innerText = "K线数据加载失败";
-                console.error(error);
+            if (isPhysicalLandscape) {
+                isLandscapeUI = true;
+                document.body.classList.remove('is-landscape-fake');
+                document.body.classList.add('is-landscape-native');
+                document.getElementById('btn-rotate').style.display = 'none'; 
+                
+                document.getElementById('sidebar').classList.remove('collapsed');
+                document.getElementById('toggle-sidebar-btn').innerText = '◀';
+            } else {
+                document.getElementById('btn-rotate').style.display = 'inline-block';
+                document.body.classList.remove('is-landscape-native');
+                
+                if (isFakeLandscapeRequested) {
+                    isLandscapeUI = true;
+                    document.body.classList.add('is-landscape-fake');
+                    document.getElementById('btn-rotate').innerText = '⇋ 竖屏恢复';
+                    document.getElementById('sidebar').classList.remove('collapsed');
+                    document.getElementById('toggle-sidebar-btn').innerText = '◀';
+                } else {
+                    isLandscapeUI = false;
+                    document.body.classList.remove('is-landscape-fake');
+                    document.getElementById('btn-rotate').innerText = '⇋ 横屏模式';
+                    document.getElementById('sidebar').classList.add('collapsed');
+                    document.getElementById('toggle-sidebar-btn').innerText = '▶';
+                }
             }
+
+            // 向 App 发送隐藏/显示状态栏的指令
+            if (typeof uni !== 'undefined' && uni.postMessage) {
+                uni.postMessage({
+                    data: { action: isLandscapeUI ? 'enter_fullscreen' : 'exit_fullscreen' }
+                });
+            }
+
+            if (chart) {
+                chart.setOption({ tooltip: { showContent: !isLandscapeUI } });
+                
+                // 🚨 修复 2：进入横屏状态时，强制刷新横幅，展示最新一天的数据
+                if (isLandscapeUI && globalRawData.length > 0) {
+                    updateBanner(globalRawData.length - 1);
+                }
+                
+                setTimeout(() => chart.resize(), 100);
+            }
+        }
+
+        window.addEventListener('resize', checkOrientation);
+
+        function toggleLandscapeBtn() {
+            isFakeLandscapeRequested = !isFakeLandscapeRequested;
+            checkOrientation();
+        }
+
+        function toggleSidebar() {
+            const sb = document.getElementById('sidebar');
+            const btn = document.getElementById('toggle-sidebar-btn');
+            sb.classList.toggle('collapsed');
+            btn.innerText = sb.classList.contains('collapsed') ? '▶' : '◀';
+            setTimeout(() => { if (chart) chart.resize(); }, 300);
+        }
+
+        function loadStockList() {
+            fetch(`/api/pool/app/${currentStatus}`).then(res => res.json()).then(data => {
+                if (!Array.isArray(data)) return;
+                const listDom = document.getElementById('stock-list');
+                listDom.innerHTML = '';
+                data.forEach(stock => {
+                    const div = document.createElement('div');
+                    div.className = `stock-item ${stock.code === currentCode ? 'active' : ''}`;
+                    div.innerHTML = `<span class="s-name">${stock.name}</span><span class="s-code">${stock.code}</span>`;
+                    div.onclick = () => {
+                        document.querySelectorAll('.stock-item').forEach(el => el.classList.remove('active'));
+                        div.classList.add('active');
+                        currentCode = stock.code; currentName = stock.name;
+                        document.getElementById('stock-title').innerText = `${currentName} (${currentCode})`;
+                        loadChartData();
+                        if (!isLandscapeUI) toggleSidebar();
+                    };
+                    listDom.appendChild(div);
+                });
+            });
+        }
+
+        function updateBanner(index) {
+            if (!isLandscapeUI || index < 0 || !globalRawData[index]) return;
+            const d = globalRawData[index];
+            const preClose = index > 0 ? globalRawData[index-1].close : d.open;
+            const pctChg = ((d.close - preClose) / preClose * 100).toFixed(2);
+            
+            let colorCls = pctChg > 0 ? 'val-red' : (pctChg < 0 ? 'val-green' : 'val-normal');
+            let sign = pctChg > 0 ? '+' : '';
+
+            document.getElementById('lcd-name').innerText = currentName;
+            document.getElementById('lcd-code').innerText = currentCode;
+            document.getElementById('lcd-price').innerText = d.close.toFixed(2);
+            document.getElementById('lcd-price').className = colorCls;
+            document.getElementById('lcd-change').innerText = `${sign}${pctChg}%`;
+            document.getElementById('lcd-change').className = colorCls;
+            
+            document.getElementById('lcd-high').innerText = d.high.toFixed(2);
+            document.getElementById('lcd-high').className = (d.high > preClose) ? 'val-red' : (d.high < preClose ? 'val-green' : 'val-normal');
+            document.getElementById('lcd-low').innerText = d.low.toFixed(2);
+            document.getElementById('lcd-low').className = (d.low > preClose) ? 'val-red' : (d.low < preClose ? 'val-green' : 'val-normal');
+            
+            document.getElementById('lcd-open').innerText = d.open.toFixed(2);
+            document.getElementById('lcd-turn').innerText = `${(d.turn || 0).toFixed(2)}%`;
+            document.getElementById('lcd-vol').innerText = formatHand(d.volume);
+            let amt = d.amount || (d.volume * d.close * 100); 
+            document.getElementById('lcd-amt').innerText = formatVol(amt);
+        }
+
+        // 核心图表加载：加入缓存拦截
+        function loadChartData(forceRefresh = false) {
+            if (!currentCode) return;
+            const loading = document.getElementById('loading');
+            
+            const cacheKey = `kline_data_${currentCode}`;
+            const cachedDataStr = localStorage.getItem(cacheKey);
+            
+            // 🚨 第一步：尝试本地缓存秒开
+            if (!forceRefresh && cachedDataStr) {
+                try {
+                    const cachedData = JSON.parse(cachedDataStr);
+                    if (Array.isArray(cachedData) && cachedData.length > 0) {
+                        // 有缓存，直接渲染，全程不会出现 loading！
+                        renderEcharts(cachedData);
+                        return;
+                    }
+                } catch (e) { console.error("缓存解析失败"); }
+            }
+
+            // 🚨 第二步：如果代码走到这里，说明没有缓存，必须走网络
+            // 此时才把 Loading 弹出来
+            loading.style.display = 'block';
+            loading.innerText = '📡 行情通讯中...';
+            
+            fetch(`/api/kline/${currentCode}`).then(res => res.json()).then(data => {
+                if (!Array.isArray(data) || data.length === 0) {
+                    loading.innerText = '❌ 该标的暂无 K 线数据';
+                    return;
+                }
+                loading.style.display = 'none'; // 拿到数据后再次隐藏
+                
+                localStorage.setItem(cacheKey, JSON.stringify(data));
+                renderEcharts(data);
+            }).catch(e => {
+                loading.style.display = 'block';
+                loading.innerText = '❌ 请求出错，请确认网络连接';
+            });
+        }
+
+        // 新增：提取出专门负责渲染 ECharts 的函数
+        function renderEcharts(data) {
+            globalRawData = data;
+            
+            const dates = data.map(item => item.date);
+            const kData = data.map(item => [item.open, item.close, item.low, item.high]);
+            const volData = data.map(item => ({
+                value: item.volume,
+                itemStyle: { color: item.close >= item.open ? '#e83828' : '#00a854' }
+            }));
+
+            const option = {
+                animation: false, // 追求极速，关闭入场动画
+                tooltip: { 
+                    show: true, showContent: !isLandscapeUI, trigger: 'axis', axisPointer: { type: 'cross' }, 
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)', padding: 8, textStyle: { fontSize: 11 },
+                    formatter: function(params) {
+                        let i = params[0].dataIndex; let d = globalRawData[i]; 
+                        let preClose = i > 0 ? globalRawData[i-1].close : d.open;
+                        let pctChg = ((d.close - preClose) / preClose * 100).toFixed(2); 
+                        let pctColor = pctChg > 0 ? '#e83828' : (pctChg < 0 ? '#00a854' : '#333'); 
+                        let sign = pctChg > 0 ? '+' : '';
+                        
+                        return `<div style="font-family: sans-serif;">
+                            <div style="margin-bottom: 3px; border-bottom: 1px solid #eee; padding-bottom: 3px;"><b>${d.date}</b></div>
+                            开: ${d.open.toFixed(2)} &nbsp; 收: <span style="color:${d.close>d.open?'#e83828':'#00a854'}">${d.close.toFixed(2)}</span><br/>
+                            高: ${d.high.toFixed(2)} &nbsp; 低: ${d.low.toFixed(2)}<br/>
+                            涨幅: <b style="color:${pctColor}">${sign}${pctChg}%</b><br/>
+                            量: ${formatHand(d.volume)} &nbsp; 换手: <b style="color:#d46b08">${(d.turn||0).toFixed(2)}%</b>
+                        </div>`;
+                    }
+                },
+                axisPointer: { link: { xAxisIndex: 'all' } },
+                grid: [ { left: '10%', right: '4%', top: '6%', height: '62%' }, { left: '10%', right: '4%', top: '75%', height: '15%' } ],
+                xAxis: [
+                    { type: 'category', data: dates, boundaryGap: true, axisLine: { onZero: false }, splitLine: { show: false }, axisLabel: { fontSize: 10 } },
+                    { type: 'category', data: dates, gridIndex: 1, axisLabel: { show: false }, axisTick: { show: false } }
+                ],
+                yAxis: [
+                    { scale: true, splitLine: { lineStyle: { type: 'dashed', color: '#f0f0f0' } }, axisLabel: { fontSize: 10 } },
+                    { scale: true, gridIndex: 1, axisLabel: { show: false }, splitLine: { show: false } }
+                ],
+                dataZoom: [
+                    { type: 'inside', xAxisIndex: [0, 1], start: 60, end: 100 },
+                    { type: 'slider', xAxisIndex: [0, 1], bottom: '1%', start: 60, end: 100, height: 16 }
+                ],
+                series: [
+                    { name: '日K', type: 'candlestick', data: kData, itemStyle: { color: '#e83828', color0: '#00a854', borderColor: '#e83828', borderColor0: '#00a854' } },
+                    { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volData }
+                ]
+            };
+            
+            if (chart) {
+                chart.setOption(option);
+                chart.off('updateAxisPointer'); 
+                chart.on('updateAxisPointer', function (event) {
+                    if (isLandscapeUI && event.axesInfo && event.axesInfo.length > 0) {
+                        const xAxisInfo = event.axesInfo[0];
+                        if (xAxisInfo) updateBanner(xAxisInfo.value);
+                    }
+                });
+            }
+            updateBanner(data.length - 1);
+        }
+
+        if (chart) {
+            loadStockList();
+            loadChartData();
+            checkOrientation(); 
         }
     </script>
 </body>
