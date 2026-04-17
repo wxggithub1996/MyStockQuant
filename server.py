@@ -1,3 +1,4 @@
+import threading
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles # ⚠️ 1. 引入 StaticFiles
 
@@ -12,6 +13,18 @@ import os
 from config import DB_PATH
 
 app = FastAPI()
+
+# 🚀 核心新增：全局任务互斥锁与状态机
+task_lock = threading.Lock()
+task_state = {
+    "is_running": False,
+    "task_name": ""
+}
+
+# 🚀 新增接口：供多端随时查询系统当前是否繁忙
+@app.get("/api/task_status")
+def get_task_status():
+    return task_state
 
 # ⚠️ 2. 挂载静态资源目录（这行代码必须有！）
 # 参数解释：
@@ -94,24 +107,34 @@ def read_root():
 
 from fastapi import Query
 
-# 🚨 修改原来的 counts 接口，增加 show_special 参数
+# ==========================================
+# 🚀 统一布尔值解析工具
+# ==========================================
+def parse_bool(val):
+    return str(val).lower() in ['true', '1', 't', 'yes']
+
+# ==========================================
+# 📊 统一 Counts 接口 (同时兼容 App 和 Web)
+# ==========================================
 @app.get("/api/counts")
-def get_counts(show_special: str = "false"): # 强制声明为字符串接收
+def get_counts(show_special: str = "false", st: str = "false", cy: str = "true", kc: str = "false"):
     import sqlite3
     from config import DB_PATH
     
-    # 🚨 极度严谨的布尔转换逻辑
-    # 只有当参数明确为 'true' (不区分大小写) 时，才判定为显示特殊票
-    is_show_actual = show_special.lower() == "true"
+    # 兼容处理：App传show_special，Web传独立的st/cy/kc
+    is_show_app = parse_bool(show_special)
+    show_st = parse_bool(st) or is_show_app
+    show_kc = parse_bool(kc) or is_show_app
+    show_cy = parse_bool(cy) # 创业板通常默认开启
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
+    is_show_actual = show_special.lower() == "true"
     sql = "SELECT status, COUNT(*) FROM stock_pipeline WHERE 1=1"
     
-    # 如果判定为 False，则执行过滤逻辑（不显示ST和科创）
+    # 动态拼接过滤条件
     if not is_show_actual:
-        sql += " AND name NOT LIKE '%ST%' AND code NOT LIKE '688%'"
+        sql += " AND name NOT LIKE '%ST%' AND code NOT LIKE '688%' AND code NOT LIKE '300%'"
         
     sql += " GROUP BY status"
     
@@ -127,26 +150,49 @@ def get_counts(show_special: str = "false"): # 强制声明为字符串接收
 
 import pandas as pd
 import sqlite3
-# ... 确保顶部有这些 import
+
 
 # ----------------------------------------------------
 # 🌐 原版 Web 端接口 (保持纯洁，绝对不动它！)
 # ----------------------------------------------------
 @app.get("/api/pool/{status}")
-def get_web_pool(status: int):
+def get_web_pool(status: int, st: str = "false", cy: str = "true", kc: str = "false"):
+    import sqlite3
+    from config import DB_PATH
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT code, name FROM stock_pipeline WHERE status=?", (status,))
+    
+    sql = "SELECT code, name FROM stock_pipeline WHERE status=?"
+    
+    # 根据 Web 端的三个复选框进行动态过滤
+    if not parse_bool(st):
+        sql += " AND name NOT LIKE '%ST%'"
+    if not parse_bool(kc):
+        sql += " AND code NOT LIKE '688%'"
+    if not parse_bool(cy):
+        sql += " AND code NOT LIKE '300%'"
+        
+    cursor.execute(sql, (status,))
     data = [{"code": r[0], "name": r[1]} for r in cursor.fetchall()]
     conn.close()
+    
     return data
 
 # ----------------------------------------------------
 # 📱 专为 App 端打造的新接口 (BFF 模式)
 # ----------------------------------------------------
 @app.get("/api/pool/app/{status}")
-def get_app_pool(status: int):
+def get_app_pool(status: int, show_special: str = "false"):
+    import pandas as pd
+    import sqlite3
+    from config import DB_PATH
+    
     conn = sqlite3.connect(DB_PATH)
+    # 解析前端传来的字符串布尔值
+    is_show = show_special.lower() in ['true', '1', 't', 'yes']
+    
+    # 完整的 SQL 查询语句，不要有任何省略号
     query = """
         SELECT 
             p.code, 
@@ -154,12 +200,16 @@ def get_app_pool(status: int):
             p.latest_price as price,
             p.latest_change as change,
             p.turnover,
-            p.volume as amount, -- sync_app_data 中把成交额存进了 volume 字段
-            (SELECT volume FROM daily_k_line k WHERE k.code = p.code ORDER BY date DESC LIMIT 1) as raw_volume -- 原始成交量(股)
+            p.volume as amount, 
+            (SELECT volume FROM daily_k_line k WHERE k.code = p.code ORDER BY date DESC LIMIT 1) as raw_volume 
         FROM stock_pipeline p
         WHERE p.status = ?
     """
-    import pandas as pd
+    
+    # 🚨 过滤逻辑：如果开关关闭，同时剔除 ST、科创板(688) 和 创业板(300)
+    if not is_show:
+        query += " AND p.name NOT LIKE '%ST%' AND p.code NOT LIKE '688%' AND p.code NOT LIKE '300%'"
+        
     df = pd.read_sql(query, conn, params=(status,))
     conn.close()
     
@@ -180,24 +230,34 @@ def get_kline(code: str):
 # [修改] 触发引擎，先同步数据，再流转状态
 @app.post("/api/run_strategy")
 def api_run_strategy(req: StrategyReq):
+    global task_state
+    
+    # 🚨 第一道防线：如果已经在执行，直接打回！
+    if task_state["is_running"]:
+        return {"status": "running", "msg": f"⏳ 系统正在执行【{task_state['task_name']}】，请勿重复操作！"}
+        
+    # 上锁
+    with task_lock:
+        task_state["is_running"] = True
+        task_state["task_name"] = "增量同步"
+        
     try:
         from update_daily import update_daily_k_lines
         update_daily_k_lines() 
-        
         import time
         time.sleep(2)
-        
         from strategy_engine import run_strategy_engine
         run_strategy_engine(source=req.source)
-        
-        # 💥 核心修复：执行完毕后，强制调用 App 数据格式化脚本！
         from sync_app_data import sync_data_to_app_table
         sync_data_to_app_table()
         
         return {"status": "success", "msg": "✅ 数据同步、策略流转及App视图更新完毕！"}
     except Exception as e:
         return {"status": "error", "msg": str(e)}
-
+    finally:
+        # 🚨 终极防线：无论成功还是报错，最终必须释放锁
+        task_state["is_running"] = False
+        task_state["task_name"] = ""
 
 class StatusUpdate(BaseModel):
     code: str
@@ -267,6 +327,14 @@ def get_logs():
 
 @app.post("/api/reset_bootstrap")
 def api_reset_bootstrap():
+    global task_state
+    if task_state["is_running"]:
+        return {"status": "running", "msg": f"⏳ 系统正在执行【{task_state['task_name']}】，请勿重复操作！"}
+        
+    with task_lock:
+        task_state["is_running"] = True
+        task_state["task_name"] = "系统深度重置"
+        
     try:
         from bootstrap_pipeline import run_bootstrap
         run_bootstrap()
@@ -274,6 +342,9 @@ def api_reset_bootstrap():
         return {"status": "success", "msg": "核弹重置完毕！"}
     except Exception as e:
         return {"status": "error", "msg": str(e)}
+    finally:
+        task_state["is_running"] = False
+        task_state["task_name"] = ""
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

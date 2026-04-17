@@ -6,6 +6,7 @@ import os
 # 导入我们之前写好的核心模块
 from update_daily import update_daily_k_lines
 from strategy_engine import run_strategy_engine
+from sync_app_data import sync_data_to_app_table # 🚀 新增导入
 
 def daily_quant_job():
     print("\n" + "="*50)
@@ -23,6 +24,10 @@ def daily_quant_job():
         print("➡️ 步骤 2/2: 开始流转策略状态机...")
         run_strategy_engine()
         
+        # 🚀 第三步：自动格式化 App 所需的展示数据
+        print("➡️ 步骤 3/3: 正在同步 App 视图数据...")
+        sync_data_to_app_table()
+
         print("✅ 今日量化任务圆满完成！各池子数据已更新。")
         
     except Exception as e:

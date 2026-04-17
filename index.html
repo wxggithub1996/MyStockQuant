@@ -733,6 +733,37 @@
     </div>
 
     <script>
+        // 🚀 新增：多端实时状态同步机制
+        function checkTaskStatus() {
+            fetch('/api/task_status').then(res => res.json()).then(data => {
+                const btnRun = document.querySelector('.btn-run');
+                const btnReset = document.querySelector('.btn-reset');
+                
+                if (data.is_running) {
+                    // 如果发现后台在忙，立刻冻结按钮
+                    btnRun.disabled = true;
+                    btnReset.disabled = true;
+                    btnRun.style.background = "#555";
+                    btnReset.style.background = "#555";
+                    btnReset.style.color = "#fff";
+                    btnRun.innerHTML = `⏳ 正在执行：${data.task_name}...`;
+                } else {
+                    // 后台空闲，恢复按钮
+                    btnRun.disabled = false;
+                    btnReset.disabled = false;
+                    btnRun.style.background = "#1890ff";
+                    btnReset.style.background = "#fff";
+                    btnReset.style.color = "#ff4d4f";
+                    btnRun.innerHTML = "⚙️ 增量同步";
+                    btnReset.innerHTML = "⚠️ 系统深度重置";
+                }
+            }).catch(() => {});
+        }
+
+        // 启动时检查一次，并且每 3 秒自动刷新一次状态
+        checkTaskStatus();
+        setInterval(checkTaskStatus, 3000);
+        
         // 切换单个日期组的显示状态
         // 1. 强制挂载到 window，确保不管写在哪里，点击事件都能 100% 找到它们
         window.toggleGroup = function (dateId) {
@@ -1036,34 +1067,27 @@
             });
         }
 
-        function runStrategy() {
+        function runStrategy() { 
             requireAuth(() => {
-                // 1. 点击后立刻改变按钮状态，防止重复点击
-                const btn = document.querySelector('.btn-run');
-                const originalText = btn.innerHTML;
-                btn.innerHTML = "⏳ 正在拉取全市场数据，请耐心等待...";
-                btn.disabled = true;
-                btn.style.background = "#555";
+                if (!confirm("⚠️ 确认执行增量同步？\n\n系统将拉取全市场最新数据并重新运行策略模型。")) return;
 
                 fetch('/api/run_strategy', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ source: '按钮处理' })
-                }).then(res => res.json()).then(d => {
-                    alert(d.msg);
-                    // 2. 执行完毕后恢复按钮状态
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    btn.style.background = "#1890ff";
-                    reloadAll();
-                }).catch(err => {
-                    alert('请求超时或发生错误，请查看服务器日志！');
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    btn.style.background = "#1890ff";
-                });
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({source: '按钮处理'})
+                }).then(res => res.json()).then(d => { 
+                    if (d.status === 'running') {
+                        alert(d.msg); // 被后端拦截
+                    } else {
+                        alert(d.msg); 
+                        reloadAll(); 
+                    }
+                }); 
+                // 立刻强查一次状态，让按钮变灰
+                setTimeout(checkTaskStatus, 500);
             });
         }
+        
         function resetSystem() { requireAuth(() => { if (!confirm("⚠️ 二次确认：确定要深度重置并回溯全市场吗？")) return; fetch('/api/reset_bootstrap', { method: 'POST' }).then(res => res.json()).then(d => { alert(d.msg); reloadAll(); }); }); }
         function updateStockStatus(ns) { requireAuth(() => { fetch('/api/update_status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: currentCode, new_status: ns, source: '手工干预' }) }).then(() => reloadAll()); }); }
 

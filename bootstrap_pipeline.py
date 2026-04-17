@@ -26,6 +26,11 @@ def run_bootstrap():
         # 重置索引，确保切片时是纯数字索引，避免日期索引带来的边界错误
         df = df.reset_index(drop=True)
         
+        # 🚨 【强制将这些列转换为数字类型】
+        # errors='coerce' 的作用是：如果数据库里有奇怪的空字符或乱码，直接转换成 NaN，防止程序崩溃
+        numeric_cols = ['open', 'close', 'high', 'low', 'volume']
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+
         # 数据量太少不够判断前期横盘的，直接跳过
         if len(df) < 40:
             continue
