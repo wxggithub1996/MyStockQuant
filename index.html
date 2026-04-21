@@ -14,6 +14,20 @@
             box-sizing: border-box;
         }
 
+        .new-tag {
+            background-color: #ff4d4f;
+            color: white;
+            font-size: 10px;
+            padding: 0px 4px;
+            border-radius: 3px;
+            margin-left: 4px;
+            font-weight: bold;
+            display: inline-block;
+            vertical-align: middle;
+            transform: scale(0.85); /* 稍微缩小一点，不破坏行高 */
+            transform-origin: left center;
+        }
+
         body {
             font-family: 'Segoe UI', system-ui, sans-serif;
             margin: 0;
@@ -864,33 +878,48 @@
         }
 
         function loadStockList() {
-            const listDiv = document.getElementById('stock-list'); listDiv.innerHTML = '<div style="padding:15px;">加载中...</div>';
-            fetch(`/api/pool/${currentStatus}` + getFilterParams()).then(res => res.json()).then(stocks => {
-                listDiv.innerHTML = '';
-                if (stocks.length === 0) { listDiv.innerHTML = '<div style="padding:15px; color:gray; text-align:center;">暂无匹配标的</div>'; return; }
-                stocks.forEach((stock) => {
-                    const div = document.createElement('div'); const domId = `stock-item-${stock.code}`; let isBuyPoint = (currentStatus === 3);
-                    div.className = isBuyPoint ? 'stock-item buy-alert' : 'stock-item'; div.id = domId;
-                    let tag = "";
-                    if (stock.code.startsWith('300')) tag += `<span class="tag" style="background:#e6f7ff; color:#1890ff;">创</span>`;
-                    if (stock.code.startsWith('688')) tag += `<span class="tag" style="background:#fff2e8; color:#fa541c;">科</span>`;
-                    if (stock.name.includes('ST')) tag += `<span class="tag" style="background:#fff1f0; color:#f5222d;">ST</span>`;
-                    let buyBadge = isBuyPoint ? `<span class="badge-buy">🚀 突破买点</span>` : "";
+    const listDiv = document.getElementById('stock-list'); 
+    listDiv.innerHTML = '<div style="padding:15px;">加载中...</div>';
+    
+    fetch(`/api/pool/${currentStatus}` + getFilterParams())
+        .then(res => res.json())
+        .then(stocks => {
+            listDiv.innerHTML = '';
+            if (stocks.length === 0) { 
+                listDiv.innerHTML = '<div style="padding:15px; color:gray; text-align:center;">暂无匹配标的</div>'; 
+                return; 
+            }
+            
+            stocks.forEach((stock) => {
+                const div = document.createElement('div'); 
+                const domId = `stock-item-${stock.code}`; 
+                let isBuyPoint = (currentStatus === 3);
+                div.className = isBuyPoint ? 'stock-item buy-alert' : 'stock-item'; 
+                div.id = domId;
+                
+                let tag = "";
+                if (stock.code.startsWith('300')) tag += `<span class="tag" style="background:#e6f7ff; color:#1890ff;">创</span>`;
+                if (stock.code.startsWith('688')) tag += `<span class="tag" style="background:#fff2e8; color:#fa541c;">科</span>`;
+                if (stock.name.includes('ST')) tag += `<span class="tag" style="background:#fff1f0; color:#f5222d;">ST</span>`;
+                let buyBadge = isBuyPoint ? `<span class="badge-buy">🚀 突破买点</span>` : "";
+                
+                // 🚀 核心修改 1：判断并生成“新”字标签
+                let newBadge = stock.is_new ? `<span class="new-tag">新</span>` : "";
 
-                    div.innerHTML = `
-                        <div class="stock-info" onclick="selectStockAndActive(this.parentElement, '${stock.code}', '${stock.name}')">
-                            <span class="stock-name" style="font-size:14px; font-weight:bold; margin-right:6px;">${stock.name}</span>
-                            <span style="font-size:12px; color:#888;">(${stock.code})</span>${tag} ${buyBadge}
-                        </div>
-                        <div class="stock-actions">
-                            <button class="btn-pin" onclick="pinToTop(event, '${domId}')" title="置顶该股票">📌</button>
-                            <div class="drag-handle" title="按住拖动排序">⋮⋮</div>
-                        </div>`;
-                    listDiv.appendChild(div);
-                });
-                initSortable();
+                div.innerHTML = `
+                    <div class="stock-info" onclick="selectStockAndActive(this.parentElement, '${stock.code}', '${stock.name}')">
+                        <span class="stock-name" style="font-size:14px; font-weight:bold; margin-right:6px;">${stock.name}</span>
+                        <span style="font-size:12px; color:#888;">(${stock.code})</span>${newBadge}${tag} ${buyBadge}
+                    </div>
+                    <div class="stock-actions">
+                        <button class="btn-pin" onclick="pinToTop(event, '${domId}')" title="置顶该股票">📌</button>
+                        <div class="drag-handle" title="按住拖动排序">⋮⋮</div>
+                    </div>`;
+                listDiv.appendChild(div);
             });
-        }
+            initSortable();
+        });
+}
 
         function selectStockAndActive(element, code, name) {
             document.querySelectorAll('.stock-item').forEach(el => el.classList.remove('active')); element.classList.add('active');

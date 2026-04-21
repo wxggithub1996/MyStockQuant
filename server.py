@@ -26,6 +26,16 @@ task_state = {
 def get_task_status():
     return task_state
 
+# 统一判断是否为“新”的辅助函数
+def check_is_new(update_time_str):
+    if not update_time_str: return False
+    try:
+        # 你的数据库 update_time 格式通常为 '2026-04-21 10:00:00'
+        dt = datetime.datetime.strptime(update_time_str, '%Y-%m-%d %H:%M:%S')
+        return (datetime.datetime.now() - dt).total_seconds() < 86400 # 24小时内
+    except:
+        return False
+
 # ⚠️ 2. 挂载静态资源目录（这行代码必须有！）
 # 参数解释：
 # "/static" -> 前端请求的 URL 前缀
@@ -163,7 +173,7 @@ def get_web_pool(status: int, st: str = "false", cy: str = "true", kc: str = "fa
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    sql = "SELECT code, name FROM stock_pipeline WHERE status=?"
+    sql = "SELECT code, name, update_time FROM stock_pipeline WHERE status=?"
     
     # 根据 Web 端的三个复选框进行动态过滤
     if not parse_bool(st):
@@ -174,9 +184,15 @@ def get_web_pool(status: int, st: str = "false", cy: str = "true", kc: str = "fa
         sql += " AND code NOT LIKE '300%'"
         
     cursor.execute(sql, (status,))
-    data = [{"code": r[0], "name": r[1]} for r in cursor.fetchall()]
+    rows = cursor.fetchall()
+    data = []
+    for r in rows:
+        data.append({
+            "code": r[0], 
+            "name": r[1],
+            "is_new": check_is_new(r[2]) # 🚀 动态标记“新”
+        })
     conn.close()
-    
     return data
 
 # ----------------------------------------------------
@@ -201,6 +217,7 @@ def get_app_pool(status: int, show_special: str = "false"):
             p.latest_change as change,
             p.turnover,
             p.volume as amount, 
+            p.update_time,
             (SELECT volume FROM daily_k_line k WHERE k.code = p.code ORDER BY date DESC LIMIT 1) as raw_volume 
         FROM stock_pipeline p
         WHERE p.status = ?
@@ -217,6 +234,9 @@ def get_app_pool(status: int, show_special: str = "false"):
         return []
         
     df = df.fillna("")
+    records = df.to_dict(orient='records')
+    for rec in records:
+        rec['is_new'] = check_is_new(rec.get('update_time'))
     return df.to_dict(orient='records')
 
 
