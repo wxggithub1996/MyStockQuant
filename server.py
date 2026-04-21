@@ -35,24 +35,24 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # ==========================================
 # 📊 [新增] 数据库初始化：创建审计日志表
 # ==========================================
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS operation_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            time TEXT,
-            code TEXT,
-            name TEXT,
-            source TEXT,
-            detail TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# def init_db():
+#     conn = sqlite3.connect(DB_PATH)
+#     cursor = conn.cursor()
+#     cursor.execute('''
+#         CREATE TABLE IF NOT EXISTS operation_log (
+#             id INTEGER PRIMARY KEY AUTOINCREMENT,
+#             date TEXT,
+#             time TEXT,
+#             code TEXT,
+#             name TEXT,
+#             source TEXT,
+#             detail TEXT
+#         )
+#     ''')
+#     conn.commit()
+#     conn.close()
 
-init_db() # 启动时自动检查建表
+# init_db() # 启动时自动检查建表
 
 import sqlite3
 from datetime import datetime
@@ -85,7 +85,7 @@ def write_log(code, name, source, detail):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     now = datetime.datetime.now()
-    cursor.execute("INSERT INTO operation_log (date, time, code, name, source, detail) VALUES (?, ?, ?, ?, ?, ?)",
+    cursor.execute("INSERT INTO operation_log (log_date, log_time, code, name, source, detail) VALUES (?, ?, ?, ?, ?, ?)",
                    (now.strftime('%Y-%m-%d'), now.strftime('%H:%M:%S'), code, name, source, detail))
     conn.commit()
     conn.close()

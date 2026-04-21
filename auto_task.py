@@ -15,7 +15,7 @@ def daily_quant_job():
     try:
         # 第一步：自动拉取今日最新 K 线数据
         print("➡️ 步骤 1/2: 开始更新数据...")
-        update_daily_k_lines()
+        # update_daily_k_lines()
         
         # 给系统一点缓冲时间（防止数据库锁死），暂停 2 秒
         time.sleep(2)
@@ -38,7 +38,7 @@ def daily_quant_job():
 # ==========================================
 # ⏱️ 核心调度设置：设定每天 15:35 自动执行
 # ==========================================
-schedule.every().day.at("15:35").do(daily_quant_job)
+schedule.every().day.at("12:11").do(daily_quant_job)
 
 if __name__ == "__main__":
     print("🤖 量化无人值守守护进程已启动...")
