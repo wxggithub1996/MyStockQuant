@@ -4,26 +4,27 @@ from config import DB_PATH
 
 def sync_data_to_app_table():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
     print("正在基于个股独立时间线计算涨跌幅...")
-    
+
     try:
         # 1. 获取 stock_pipeline 中的名单
         pipeline_codes = pd.read_sql("SELECT code FROM stock_pipeline", conn)['code'].tolist()
-        
+
         if not pipeline_codes:
             print("股票池为空，无需同步。")
             return
 
         # 构造 SQL 的 IN 子句
         codes_str = "','".join(pipeline_codes)
-        
-        # 2. 提取这些股票【所有】的近期 K 线数据，并按时间倒序排列
-        # (为了防止全表扫描内存爆炸，我们限制提取最近的 30 天数据足够了)
+
+        # 2. 只取最近5天数据 (只需要T日和T-1日算涨跌幅，5天留冗余)
         query = f"""
-            SELECT code, date, close, turn, amount 
-            FROM daily_k_line 
-            WHERE code IN ('{codes_str}') 
-            ORDER BY date DESC
+            SELECT code, date, close, turn, amount
+            FROM daily_k_line
+            WHERE code IN ('{codes_str}')
+              AND date >= date('now', '-5 days')
+            ORDER BY code, date DESC
         """
         df_k = pd.read_sql(query, conn)
 
@@ -76,10 +77,10 @@ def sync_data_to_app_table():
         """, update_data)
         
         conn.commit()
-        print(f"✅ 同步成功！已完美填补 {len(update_data)} 只股票的真实数据。")
+        print(f"[完成] 同步成功！已完美填补 {len(update_data)} 只股票的真实数据。")
 
     except Exception as e:
-        print(f"❌ 同步失败: {e}")
+        print(f"[失败] 同步失败: {e}")
     finally:
         conn.close()
 

@@ -1,6 +1,6 @@
 import threading
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles # ⚠️ 1. 引入 StaticFiles
+from fastapi.staticfiles import StaticFiles # [警告]️ 1. 引入 StaticFiles
 
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -14,14 +14,20 @@ from config import DB_PATH
 
 app = FastAPI()
 
-# 🚀 核心新增：全局任务互斥锁与状态机
+def _get_conn():
+    """获取数据库连接 (自动开启 WAL 模式)"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+# [启动] 核心新增：全局任务互斥锁与状态机
 task_lock = threading.Lock()
 task_state = {
     "is_running": False,
     "task_name": ""
 }
 
-# 🚀 新增接口：供多端随时查询系统当前是否繁忙
+# [启动] 新增接口：供多端随时查询系统当前是否繁忙
 @app.get("/api/task_status")
 def get_task_status():
     return task_state
@@ -36,17 +42,17 @@ def check_is_new(update_time_str):
     except:
         return False
 
-# ⚠️ 2. 挂载静态资源目录（这行代码必须有！）
+# [警告]️ 2. 挂载静态资源目录（这行代码必须有！）
 # 参数解释：
 # "/static" -> 前端请求的 URL 前缀
 # directory="static" -> 你 Python 项目根目录下真实的文件夹名字 (里面放着你的 index.html)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ==========================================
-# 📊 [新增] 数据库初始化：创建审计日志表
+# [统计] [新增] 数据库初始化：创建审计日志表
 # ==========================================
 # def init_db():
-#     conn = sqlite3.connect(DB_PATH)
+#     conn = _get_conn()
 #     cursor = conn.cursor()
 #     cursor.execute('''
 #         CREATE TABLE IF NOT EXISTS operation_log (
@@ -69,7 +75,7 @@ from datetime import datetime
 
 # 确保你的 server.py 启动时会执行一次这个建表函数
 def init_log_table():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS operation_log (
@@ -89,10 +95,10 @@ def init_log_table():
 init_log_table()
 
 # ==========================================
-# 📝 [新增] 日志写入工具函数
+# [日志] [新增] 日志写入工具函数
 # ==========================================
 def write_log(code, name, source, detail):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     cursor = conn.cursor()
     now = datetime.datetime.now()
     cursor.execute("INSERT INTO operation_log (log_date, log_time, code, name, source, detail) VALUES (?, ?, ?, ?, ?, ?)",
@@ -118,13 +124,13 @@ def read_root():
 from fastapi import Query
 
 # ==========================================
-# 🚀 统一布尔值解析工具
+# [启动] 统一布尔值解析工具
 # ==========================================
 def parse_bool(val):
     return str(val).lower() in ['true', '1', 't', 'yes']
 
 # ==========================================
-# 📊 统一 Counts 接口 (同时兼容 App 和 Web)
+# [统计] 统一 Counts 接口 (同时兼容 App 和 Web)
 # ==========================================
 @app.get("/api/counts")
 def get_counts(show_special: str = "false", st: str = "false", cy: str = "true", kc: str = "false"):
@@ -137,7 +143,7 @@ def get_counts(show_special: str = "false", st: str = "false", cy: str = "true",
     show_kc = parse_bool(kc) or is_show_app
     show_cy = parse_bool(cy) # 创业板通常默认开启
     
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     cursor = conn.cursor()
     is_show_actual = show_special.lower() == "true"
     sql = "SELECT status, COUNT(*) FROM stock_pipeline WHERE 1=1"
@@ -163,14 +169,14 @@ import sqlite3
 
 
 # ----------------------------------------------------
-# 🌐 原版 Web 端接口 (保持纯洁，绝对不动它！)
+# [全市场] 原版 Web 端接口 (保持纯洁，绝对不动它！)
 # ----------------------------------------------------
 @app.get("/api/pool/{status}")
 def get_web_pool(status: int, st: str = "false", cy: str = "true", kc: str = "false"):
     import sqlite3
     from config import DB_PATH
     
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     cursor = conn.cursor()
     
     sql = "SELECT code, name, update_time FROM stock_pipeline WHERE status=?"
@@ -190,13 +196,13 @@ def get_web_pool(status: int, st: str = "false", cy: str = "true", kc: str = "fa
         data.append({
             "code": r[0], 
             "name": r[1],
-            "is_new": check_is_new(r[2]) # 🚀 动态标记“新”
+            "is_new": check_is_new(r[2]) # [启动] 动态标记“新”
         })
     conn.close()
     return data
 
 # ----------------------------------------------------
-# 📱 专为 App 端打造的新接口 (BFF 模式)
+#  专为 App 端打造的新接口 (BFF 模式)
 # ----------------------------------------------------
 @app.get("/api/pool/app/{status}")
 def get_app_pool(status: int, show_special: str = "false"):
@@ -204,7 +210,7 @@ def get_app_pool(status: int, show_special: str = "false"):
     import sqlite3
     from config import DB_PATH
     
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     # 解析前端传来的字符串布尔值
     is_show = show_special.lower() in ['true', '1', 't', 'yes']
     
@@ -223,7 +229,7 @@ def get_app_pool(status: int, show_special: str = "false"):
         WHERE p.status = ?
     """
     
-    # 🚨 过滤逻辑：如果开关关闭，同时剔除 ST、科创板(688) 和 创业板(300)
+    # [异常] 过滤逻辑：如果开关关闭，同时剔除 ST、科创板(688) 和 创业板(300)
     if not is_show:
         query += " AND p.name NOT LIKE '%ST%' AND p.code NOT LIKE '688%' AND p.code NOT LIKE '300%'"
         
@@ -242,7 +248,7 @@ def get_app_pool(status: int, show_special: str = "false"):
 
 @app.get("/api/kline/{code}")
 def get_kline(code: str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     df = pd.read_sql(f"SELECT date, open, close, high, low, volume, turn FROM daily_k_line WHERE code = '{code}' ORDER BY date ASC", conn)
     conn.close()
     return df.to_dict(orient="records")
@@ -252,7 +258,7 @@ def get_kline(code: str):
 def api_run_strategy(req: StrategyReq):
     global task_state
     
-    # 🚨 第一道防线：如果已经在执行，直接打回！
+    # [异常] 第一道防线：如果已经在执行，直接打回！
     if task_state["is_running"]:
         return {"status": "running", "msg": f"⏳ 系统正在执行【{task_state['task_name']}】，请勿重复操作！"}
         
@@ -271,11 +277,11 @@ def api_run_strategy(req: StrategyReq):
         from sync_app_data import sync_data_to_app_table
         sync_data_to_app_table()
         
-        return {"status": "success", "msg": "✅ 数据同步、策略流转及App视图更新完毕！"}
+        return {"status": "success", "msg": "[完成] 数据同步、策略流转及App视图更新完毕！"}
     except Exception as e:
         return {"status": "error", "msg": str(e)}
     finally:
-        # 🚨 终极防线：无论成功还是报错，最终必须释放锁
+        # [异常] 终极防线：无论成功还是报错，最终必须释放锁
         task_state["is_running"] = False
         task_state["task_name"] = ""
 
@@ -285,7 +291,7 @@ class StatusUpdate(BaseModel):
     source: str = "手工干预" # 对应你前端的 log.source
 @app.post("/api/update_status")
 def update_stock_status(data: StatusUpdate):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     cursor = conn.cursor()
     
     # 1. 查询该股票原来的名字（为了写进日志）
@@ -296,7 +302,7 @@ def update_stock_status(data: StatusUpdate):
     # 2. 更新股票状态 (你原有的逻辑)
     cursor.execute("UPDATE stock_pipeline SET status = ? WHERE code = ?", (data.new_status, data.code))
     
-    # 3. 💥 核心补救：写入操作日志表！
+    # 3. [写入] 核心补救：写入操作日志表！
     now = datetime.now()
     log_date = now.strftime("%Y-%m-%d")
     log_time = now.strftime("%H:%M:%S")
@@ -317,7 +323,7 @@ import os
 @app.get("/api/logs")
 def get_logs():
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _get_conn()
         cursor = conn.cursor()
         # 按日期和时间倒序查询所有日志
         cursor.execute("SELECT log_date, log_time, source, code, name, detail FROM operation_log ORDER BY log_date DESC, log_time DESC")
@@ -365,6 +371,39 @@ def api_reset_bootstrap():
     finally:
         task_state["is_running"] = False
         task_state["task_name"] = ""
+
+# ==========================================
+# 定时任务：每天 18:30 自动执行数据同步+策略流转
+# ==========================================
+import schedule
+import time as _time
+
+def daily_quant_job():
+    print("\n" + "="*50)
+    print(f"[定时] 定时任务触发 当前时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    try:
+        from update_daily import update_daily_k_lines
+        update_daily_k_lines()
+        _time.sleep(2)
+        from strategy_engine import run_strategy_engine
+        run_strategy_engine(source="定时任务")
+        from sync_app_data import sync_data_to_app_table
+        sync_data_to_app_table()
+        print("[完成] 定时任务执行完毕！")
+    except Exception as e:
+        print(f"[失败] 定时任务执行异常: {e}")
+    print("="*50 + "\n")
+
+def _start_scheduler():
+    schedule.every().day.at("18:30").do(daily_quant_job)
+    print("[定时] 已注册每日 18:30 定时任务")
+    while True:
+        schedule.run_pending()
+        _time.sleep(30)
+
+# 服务启动时自动开启定时任务线程
+_scheduler_thread = threading.Thread(target=_start_scheduler, daemon=True)
+_scheduler_thread.start()
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

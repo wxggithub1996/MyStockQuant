@@ -10,6 +10,7 @@ def upgrade_database():
         cursor.execute("ALTER TABLE stock_pipeline ADD COLUMN latest_change REAL DEFAULT 0.0")
         cursor.execute("ALTER TABLE stock_pipeline ADD COLUMN turnover TEXT DEFAULT '--'")
         cursor.execute("ALTER TABLE stock_pipeline ADD COLUMN volume TEXT DEFAULT '--'")
+        cursor.execute("ALTER TABLE stock_pipeline ADD COLUMN breakout_retest_ready INTEGER DEFAULT 0")
         print("✅ 扩容成功！准备迎接毫秒级响应。")
     except Exception as e:
         print(f"提示: {e} (如果提示 duplicate column，说明已经扩容过了)")

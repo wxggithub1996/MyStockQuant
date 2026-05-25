@@ -3,7 +3,7 @@ import pandas as pd
 import sqlite3
 
 def build_stock_basic_baostock():
-    print("🌟 开始使用 BaoStock 构建股票静态画像表...")
+    print(" 开始使用 BaoStock 构建股票静态画像表...")
     conn = sqlite3.connect('stock_quant.db')
     cursor = conn.cursor()
     
@@ -14,7 +14,7 @@ def build_stock_basic_baostock():
     print("正在登陆 BaoStock...")
     lg = bs.login()
     if lg.error_code != '0':
-        print(f"❌ BaoStock 登陆失败: {lg.error_msg}")
+        print(f"[失败] BaoStock 登陆失败: {lg.error_msg}")
         return
 
     try:
@@ -52,13 +52,13 @@ def build_stock_basic_baostock():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_basic_code ON stock_basic(code)')
             conn.commit()
             
-            print(f"✅ stock_basic 表构建成功！共写入 {len(df_final)} 只股票的基础信息。")
-            print("💡 虽然暂时没有市值数据，但你现在可以按『sector(行业)』进行选股了！")
+            print(f"[完成] stock_basic 表构建成功！共写入 {len(df_final)} 只股票的基础信息。")
+            print("[提示] 虽然暂时没有市值数据，但你现在可以按『sector(行业)』进行选股了！")
         else:
-            print("❌ 获取数据为空。")
+            print("[失败] 获取数据为空。")
             
     except Exception as e:
-        print(f"❌ 构建失败: {e}")
+        print(f"[失败] 构建失败: {e}")
         
     finally:
         bs.logout()

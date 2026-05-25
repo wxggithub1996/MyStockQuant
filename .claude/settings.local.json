@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(uvicorn *)",
+      "Bash(powershell *)",
+      "Skill(update-config)",
+      "Read(//c/Users/Administrator/.claude/**)",
+      "Edit",
+      "Write",
+      "Agent",
+      "Bash(tasklist)",
+      "Bash(findstr python *)",
+      "PowerShell(Get-CimInstance *)",
+      "Bash(taskkill /PID 4544 /F)",
+      "Bash(taskkill /PID 11576 /F)",
+      "PowerShell(Stop-Process *)",
+      "PowerShell(Get-NetTCPConnection *)"
+    ]
+  }
+}

@@ -3,8 +3,10 @@ import pandas as pd
 from config import DB_PATH
 
 def get_connection():
-    """获取数据库连接"""
-    return sqlite3.connect(DB_PATH)
+    """获取数据库连接 (自动开启 WAL 模式)"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 def init_db():
     """初始化表结构"""
@@ -22,7 +24,7 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
-    print("✅ 数据库结构初始化/校验完成。")
+    print("[完成] 数据库结构初始化/校验完成。")
 
 def load_recent_kline(months=5):
     """提取最近几个月的 K 线数据用于策略计算"""

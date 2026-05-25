@@ -4,7 +4,7 @@ import sqlite3
 import time
 
 def build_concept_mapping():
-    print("🌟 开始构建股票概念映射库...")
+    print(" 开始构建股票概念映射库...")
     conn = sqlite3.connect('stock_quant.db')
     cursor = conn.cursor()
     
@@ -48,16 +48,16 @@ def build_concept_mapping():
                 time.sleep(0.5) # 极其重要：防止被东方财富封锁 IP
                 
             except Exception as e:
-                print(f"⚠️ 拉取概念 [{concept}] 失败: {e}")
+                print(f"[警告]️ 拉取概念 [{concept}] 失败: {e}")
                 
         # 4. 统一写入数据库
         if all_mapping_data:
             df_mapping = pd.DataFrame(all_mapping_data)
             df_mapping.to_sql('stock_concept_mapping', conn, if_exists='append', index=False)
-            print(f"\n✅ 概念库构建完成！共写入 {len(df_mapping)} 条映射关系。")
+            print(f"\n[完成] 概念库构建完成！共写入 {len(df_mapping)} 条映射关系。")
             
     except Exception as e:
-        print(f"❌ 主流程异常: {e}")
+        print(f"[失败] 主流程异常: {e}")
         
     finally:
         conn.close()
