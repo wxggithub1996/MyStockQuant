@@ -50,11 +50,27 @@ pip install -r requirements.txt
 | lxml | akshare 底层解析依赖 |
 | openpyxl | Excel 读写支持 |
 
-## 三、首次初始化（全量数据拉取）
+## 三、首次初始化
 
-首次部署需要依次执行以下步骤，**总耗时约3-4小时**。
+### 方式一：上传本地数据库（推荐，5分钟搞定）
 
-### 3.1 构建股票基础信息表
+如果你本地已有完整的 `stock_quant.db` 文件，直接上传到服务器即可**跳过全量数据拉取**：
+
+```bash
+# 1. 上传数据库文件到项目目录
+scp stock_quant.db user@server:/path/to/MyStockQuant/
+
+# 2. 登录服务器，只需同步一次 App 数据即可
+python -c "from sync_app_data import sync_data_to_app_table; sync_data_to_app_table()"
+```
+
+上传后直接跳到「第四步：启动服务」。
+
+### 方式二：从零拉取全量数据（约3-4小时）
+
+如果无法获取本地数据库文件，需要依次执行以下步骤：
+
+#### 3.1 构建股票基础信息表
 
 ```bash
 python init_basic.py
@@ -185,6 +201,59 @@ nssm set MyStockQuant AppDirectory "C:\path\to\MyStockQuant"
 nssm set MyStockQuant DisplayName "MyStockQuant 量化服务"
 nssm set MyStockQuant Start SERVICE_AUTO_START
 nssm start MyStockQuant
+```
+
+### 4.6 Docker 部署（推荐）
+
+项目已包含 `Dockerfile` 和 `docker-compose.yml`，开箱即用。
+
+**快速启动：**
+
+```bash
+# 1. 确保 stock_quant.db 在项目目录下
+ls stock_quant.db
+
+# 2. 构建并启动
+docker compose up -d --build
+
+# 3. 查看日志
+docker compose logs -f
+
+# 4. 访问
+# Web: http://localhost:8000
+```
+
+**常用命令：**
+
+```bash
+docker compose up -d          # 后台启动
+docker compose down           # 停止服务
+docker compose logs -f        # 查看实时日志
+docker compose restart        # 重启服务
+docker compose ps             # 查看运行状态
+```
+
+**数据库持久化：**
+
+`docker-compose.yml` 已配置将宿主机的 `stock_quant.db` 挂载到容器内，容器重建不会丢失数据。
+
+**在容器内执行维护命令：**
+
+```bash
+# 进入容器
+docker exec -it stockquant bash
+
+# 重建策略池
+python bootstrap_pipeline.py
+
+# 手动更新K线
+python update_daily.py
+
+# 同步App数据
+python -c "from sync_app_data import sync_data_to_app_table; sync_data_to_app_table()"
+
+# 退出容器
+exit
 ```
 
 ## 五、数据库说明
@@ -391,6 +460,8 @@ MyStockQuant/
 ├── sync_app_data.py       # App端数据同步
 ├── database_manager.py    # 数据库操作封装
 ├── requirements.txt       # Python 依赖
+├── Dockerfile             # Docker 镜像构建文件
+├── docker-compose.yml     # Docker Compose 编排文件
 ├── stock_quant.db         # SQLite 数据库（~500MB）
 ├── index.html             # Web 总控台前端
 └── _archive/              # 已废弃的旧脚本

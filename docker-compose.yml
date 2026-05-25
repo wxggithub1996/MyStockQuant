@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  stockquant:
+    build: .
+    container_name: stockquant
+    ports:
+      - "8000:8000"
+    volumes:
+      # 挂载数据库文件，容器重建不丢数据
+      - ./stock_quant.db:/app/stock_quant.db
+    restart: unless-stopped
