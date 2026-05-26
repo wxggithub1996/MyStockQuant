@@ -1,6 +1,6 @@
 import threading
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles # [警告]️ 1. 引入 StaticFiles
+from fastapi.staticfiles import StaticFiles
 
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime
 import pandas as pd
 import uvicorn
-import datetime
+import datetime as dt_module
 import os
 from config import DB_PATH
 
@@ -37,8 +37,8 @@ def check_is_new(update_time_str):
     if not update_time_str: return False
     try:
         # 你的数据库 update_time 格式通常为 '2026-04-21 10:00:00'
-        dt = datetime.datetime.strptime(update_time_str, '%Y-%m-%d %H:%M:%S')
-        return (datetime.datetime.now() - dt).total_seconds() < 86400 # 24小时内
+        dt = dt_module.datetime.strptime(update_time_str, '%Y-%m-%d %H:%M:%S')
+        return (dt_module.datetime.now() - dt).total_seconds() < 86400 # 24小时内
     except:
         return False
 
@@ -70,9 +70,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # init_db() # 启动时自动检查建表
 
-import sqlite3
-from datetime import datetime
-
 # 确保你的 server.py 启动时会执行一次这个建表函数
 def init_log_table():
     conn = _get_conn()
@@ -100,7 +97,7 @@ init_log_table()
 def write_log(code, name, source, detail):
     conn = _get_conn()
     cursor = conn.cursor()
-    now = datetime.datetime.now()
+    now = dt_module.datetime.now()
     cursor.execute("INSERT INTO operation_log (log_date, log_time, code, name, source, detail) VALUES (?, ?, ?, ?, ?, ?)",
                    (now.strftime('%Y-%m-%d'), now.strftime('%H:%M:%S'), code, name, source, detail))
     conn.commit()
@@ -163,9 +160,6 @@ def get_counts(show_special: str = "false", st: str = "false", cy: str = "true",
         counts[row[0]] = row[1]
         
     return counts
-
-import pandas as pd
-import sqlite3
 
 
 # ----------------------------------------------------
@@ -318,7 +312,6 @@ def update_stock_status(data: StatusUpdate):
     return {"status": "success", "msg": "更新并记录日志成功"}
 
 # [新增 API] 拉取日志列表并按日期分组
-import os
 
 @app.get("/api/logs")
 def get_logs():
@@ -380,7 +373,7 @@ import time as _time
 
 def daily_quant_job():
     print("\n" + "="*50)
-    print(f"[定时] 定时任务触发 当前时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"[定时] 定时任务触发 当前时间: {dt_module.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         from update_daily import update_daily_k_lines
         update_daily_k_lines()
