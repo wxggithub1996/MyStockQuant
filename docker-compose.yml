@@ -7,6 +7,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # 挂载数据目录（DB + WAL + SHM 文件在同一目录）
-      - ./data:/app/data
+      # 挂载DB相关文件（主库 + WAL + SHM 必须在同一目录）
+      - ./stock_quant.db:/app/stock_quant.db
+      - ./stock_quant.db-wal:/app/stock_quant.db-wal
+      - ./stock_quant.db-shm:/app/stock_quant.db-shm
     restart: unless-stopped

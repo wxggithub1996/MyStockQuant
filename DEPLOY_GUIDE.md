@@ -57,9 +57,8 @@ pip install -r requirements.txt
 如果你本地已有完整的 `stock_quant.db` 文件，直接上传到服务器即可**跳过全量数据拉取**：
 
 ```bash
-# 1. 创建数据目录并上传数据库文件
-ssh user@server "mkdir -p /path/to/MyStockQuant/data"
-scp data/stock_quant.db user@server:/path/to/MyStockQuant/data/
+# 1. 上传数据库文件到项目根目录
+scp stock_quant.db user@server:/path/to/MyStockQuant/
 
 # 2. 登录服务器，只需同步一次 App 数据即可
 python -c "from sync_app_data import sync_data_to_app_table; sync_data_to_app_table()"
@@ -211,8 +210,8 @@ nssm start MyStockQuant
 **快速启动：**
 
 ```bash
-# 1. 确保 stock_quant.db 在 data/ 目录下
-ls data/stock_quant.db
+# 1. 确保 stock_quant.db 在项目根目录下
+ls stock_quant.db
 
 # 2. 构建并启动
 docker compose up -d --build
@@ -263,7 +262,7 @@ exit
 
 | 文件 | 说明 | 大小 |
 |------|------|------|
-| `data/stock_quant.db` | SQLite 主数据库 | ~500MB |
+| `stock_quant.db` | SQLite 主数据库 | ~500MB |
 
 ### 5.2 核心表结构
 
