@@ -73,9 +73,7 @@ def run_bootstrap():
     codes = stocks_df['code'].tolist()
     name_dict = dict(zip(stocks_df['code'], stocks_df['name']))
 
-    cursor.execute("DELETE FROM stock_pipeline")
-    conn.commit()
-
+    # 先扫描，后替换。扫描失败则保留旧数据
     # ==========================================
     # 批量预加载: 一次SQL加载全量K线到内存 (按code分组)
     # ==========================================
@@ -198,13 +196,17 @@ def run_bootstrap():
             else:
                  results.append((code, name_dict.get(code, code), 2, benchmark_price, test_date, breakout_retest_ready))
 
-    # 写入数据库
+    # 原子性替换：扫描成功后才清空旧数据，写入新结果
     if results:
+        cursor.execute("DELETE FROM stock_pipeline")
         cursor.executemany('''
             INSERT INTO stock_pipeline (code, name, status, test_high, entry_date, breakout_retest_ready, update_time)
             VALUES (?, ?, ?, ?, ?, ?, date('now'))
         ''', results)
         conn.commit()
+        print(f"[完成] 已写入 {len(results)} 只股票到 pipeline")
+    else:
+        print("[警告] 未扫描到任何符合条件的股票，保留原有 pipeline 数据")
 
     conn.close()
     
