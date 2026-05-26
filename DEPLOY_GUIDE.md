@@ -57,8 +57,9 @@ pip install -r requirements.txt
 如果你本地已有完整的 `stock_quant.db` 文件，直接上传到服务器即可**跳过全量数据拉取**：
 
 ```bash
-# 1. 上传数据库文件到项目目录
-scp stock_quant.db user@server:/path/to/MyStockQuant/
+# 1. 创建数据目录并上传数据库文件
+ssh user@server "mkdir -p /path/to/MyStockQuant/data"
+scp data/stock_quant.db user@server:/path/to/MyStockQuant/data/
 
 # 2. 登录服务器，只需同步一次 App 数据即可
 python -c "from sync_app_data import sync_data_to_app_table; sync_data_to_app_table()"
@@ -210,8 +211,8 @@ nssm start MyStockQuant
 **快速启动：**
 
 ```bash
-# 1. 确保 stock_quant.db 在项目目录下
-ls stock_quant.db
+# 1. 确保 stock_quant.db 在 data/ 目录下
+ls data/stock_quant.db
 
 # 2. 构建并启动
 docker compose up -d --build
@@ -262,7 +263,7 @@ exit
 
 | 文件 | 说明 | 大小 |
 |------|------|------|
-| `stock_quant.db` | SQLite 主数据库 | ~500MB |
+| `data/stock_quant.db` | SQLite 主数据库 | ~500MB |
 
 ### 5.2 核心表结构
 
@@ -287,10 +288,10 @@ exit
 
 ```bash
 # 查看数据库大小
-python -c "import os; print(f'{os.path.getsize(\"stock_quant.db\")/1024/1024:.1f} MB')"
+python -c "import os; print(f'{os.path.getsize(\"data/stock_quant.db\")/1024/1024:.1f} MB')"
 
 # 手动执行 VACUUM 压缩数据库（释放已删除数据的空间）
-python -c "import sqlite3; conn = sqlite3.connect('stock_quant.db'); conn.execute('VACUUM'); conn.close()"
+python -c "import sqlite3; conn = sqlite3.connect('data/stock_quant.db'); conn.execute('VACUUM'); conn.close()"
 ```
 
 ## 六、API 接口一览
@@ -415,8 +416,8 @@ python server.py > server.log 2>&1
 
 ```bash
 # 备份数据库
-copy stock_quant.db stock_quant_backup_20260525.db    # Windows
-cp stock_quant.db stock_quant_backup_20260525.db      # Linux
+copy data\stock_quant.db data\stock_quant_backup_20260525.db    # Windows
+cp data/stock_quant.db data/stock_quant_backup_20260525.db      # Linux
 ```
 
 ### 9.4 端口修改
@@ -462,8 +463,9 @@ MyStockQuant/
 ├── requirements.txt       # Python 依赖
 ├── Dockerfile             # Docker 镜像构建文件
 ├── docker-compose.yml     # Docker Compose 编排文件
-├── stock_quant.db         # SQLite 数据库（~500MB）
 ├── index.html             # Web 总控台前端
+├── data/                  # 数据目录（Docker 挂载点）
+│   └── stock_quant.db     # SQLite 数据库（~500MB）
 └── _archive/              # 已废弃的旧脚本
 ```
 
