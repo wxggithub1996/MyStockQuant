@@ -1,10 +1,7 @@
 import pandas as pd
 import sqlite3
 import os
-from config import STRATEGY_PARAMS
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'stock_quant.db')
+from config import STRATEGY_PARAMS, DB_PATH
 
 SHORT_WINDOW_DAYS = STRATEGY_PARAMS.get('short_window_days', 20)
 LONG_WINDOW_DAYS = STRATEGY_PARAMS.get('lookback_days', 60)

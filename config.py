@@ -4,7 +4,9 @@ from datetime import datetime
 # 1. 路径与数据库配置
 # 自动获取当前文件所在目录，避免路径报错
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'stock_quant.db')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, 'stock_quant.db')
 
 # 2. 策略核心参数 (随时可根据实战微调)
 STRATEGY_PARAMS = {
